@@ -1,0 +1,20 @@
+{
+    "name": "SiliconForge.Editor",
+    "rootNamespace": "SiliconForge.EditorTools",
+    "references": [
+        "SiliconForge.Core",
+        "SiliconForge.Game",
+        "Unity.AI.MCP.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
