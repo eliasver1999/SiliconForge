@@ -15,6 +15,9 @@ namespace SiliconForge.Game.Workshop
 
     public sealed class PowerButton : MonoBehaviour { }
 
+    /// <summary>The big arcade button the player's programs can read.</summary>
+    public sealed class ArcadeButton : MonoBehaviour { }
+
     /// <summary>
     /// Builds the 3D workbench out of primitives: an open-frame case, a mainboard with DIP switches,
     /// LEDs and a 7-segment display, the player's chip and a power supply with a spinning fan.
@@ -23,16 +26,21 @@ namespace SiliconForge.Game.Workshop
     {
         public event Action<int> SwitchClicked;
         public event Action PowerButtonClicked;
+        public event Action ArcadeButtonClicked;
 
         static readonly Color Amber = new Color(1f, 0.62f, 0.2f);
         static readonly int[] SegmentMasks = { 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F };
 
         Camera cam;
         Shader litShader;
+        Material plainTemplate, glowTemplate;
         readonly List<GameObject> spawned = new List<GameObject>();
 
         GameObject caseRoot, boardRoot, chipRoot, psuRoot, cableRoot, counterRoot, clockRoot;
-        GameObject ramRoot, heatsinkRoot, fanCoolerRoot, monitorRoot;
+        GameObject ramRoot, heatsinkRoot, fanCoolerRoot, monitorRoot, pressRoot, arcadeRoot;
+        Transform arcadeCap;
+        Renderer arcadeGlow;
+        Vector3 arcadeCapHome;
         Transform coolerFan;
         Renderer clockLed, chipLid;
         readonly Renderer[] pixels = new Renderer[16];
@@ -67,7 +75,9 @@ namespace SiliconForge.Game.Workshop
         public void Build(Camera camera)
         {
             cam = camera;
-            litShader = Shader.Find("Universal Render Pipeline/Lit");
+            plainTemplate = Resources.Load<Material>("SiliconForge/WorkshopLit");
+            glowTemplate = Resources.Load<Material>("SiliconForge/WorkshopLitEmissive");
+            litShader = plainTemplate != null ? plainTemplate.shader : Shader.Find("Universal Render Pipeline/Lit");
             if (litShader == null) litShader = Shader.Find("Standard");
 
             yawTarget = yaw; pitchTarget = pitch; distanceTarget = distance;
@@ -83,6 +93,9 @@ namespace SiliconForge.Game.Workshop
             counterRoot.SetActive(false);
             clockRoot.SetActive(false);
             BuildMonitor();
+            BuildArcadeButton();
+            arcadeRoot.SetActive(false);
+            pressRoot.SetActive(false);
             ramRoot.SetActive(false);
             heatsinkRoot.SetActive(false);
             fanCoolerRoot.SetActive(false);
@@ -297,6 +310,13 @@ namespace SiliconForge.Game.Workshop
             for (int k = 0; k < 4; k++)
                 Box(ramRoot.transform, "RAM Chip", new Vector3(-0.09f + k * 0.06f, 0.102f, -0.006f), new Vector3(0.045f, 0.03f, 0.004f), ramChip);
 
+            // A small socket and chip for the press detector, between the second socket and the display.
+            pressRoot = Track(new GameObject("Press Detector"));
+            pressRoot.transform.SetParent(t, false);
+            pressRoot.transform.localPosition = new Vector3(0.33f, 0f, 0.1f);
+            Box(pressRoot.transform, "Socket", new Vector3(0, 0.047f, 0), new Vector3(0.095f, 0.012f, 0.095f), Mat(new Color(0.86f, 0.83f, 0.74f), 0.35f));
+            Box(pressRoot.transform, "Package", new Vector3(0, 0.062f, 0), new Vector3(0.07f, 0.02f, 0.07f), Mat(new Color(0.035f, 0.035f, 0.04f), 0.75f));
+
             // A second, smaller socket waits empty until the counter arrives.
             var socket2 = new Vector3(0.33f, 0f, -0.13f);
             Box(t, "Socket 2", new Vector3(socket2.x, 0.047f, socket2.z), new Vector3(0.17f, 0.014f, 0.17f), Mat(new Color(0.86f, 0.83f, 0.74f), 0.35f));
@@ -344,6 +364,38 @@ namespace SiliconForge.Game.Workshop
                 b.transform.localRotation = Quaternion.Euler(18f, i * 72f, 0f);
                 b.transform.localPosition = b.transform.localRotation * new Vector3(0.036f, 0f, 0f);
             }
+        }
+
+        /// <summary>A big red arcade button on the front of the case, next to the power button.</summary>
+        void BuildArcadeButton()
+        {
+            arcadeRoot = Track(new GameObject("Arcade Button"));
+            arcadeRoot.transform.position = new Vector3(-0.42f, 0.034f, -0.47f);
+            Cylinder(arcadeRoot.transform, "Bezel", new Vector3(0, 0.006f, 0), new Vector3(0.13f, 0.006f, 0.13f), Mat(new Color(0.08f, 0.08f, 0.09f), 0.5f, 0.4f));
+            var cap = Cylinder(arcadeRoot.transform, "Cap", new Vector3(0, 0.022f, 0), new Vector3(0.095f, 0.016f, 0.095f),
+                Mat(new Color(0.78f, 0.1f, 0.12f), 0.75f, 0f, true));
+            cap.AddComponent<ArcadeButton>();
+            var col = cap.GetComponent<BoxCollider>();
+            col.size = new Vector3(1.3f, 3f, 1.3f);
+            arcadeCap = cap.transform;
+            arcadeCapHome = cap.transform.localPosition;
+            arcadeGlow = cap.GetComponent<Renderer>();
+        }
+
+        public void InstallPressChip(string label)
+        {
+            SetChipLabel(pressRoot, "Press Label", label, 0.073f, 0.0016f);
+            Show(pressRoot, 0.3f, true);
+        }
+
+        public void InstallArcadeButton() => Show(arcadeRoot, 0.3f, true);
+
+        /// <summary>Pushes the cap down and lights it while the button is held.</summary>
+        public void SetArcadePressed(bool down)
+        {
+            if (arcadeCap == null) return;
+            arcadeCap.localPosition = arcadeCapHome + (down ? new Vector3(0, -0.009f, 0) : Vector3.zero);
+            SetEmission(arcadeGlow, down ? new Color(1f, 0.15f, 0.12f) * 1.5f : Color.black);
         }
 
         /// <summary>A small monitor on the desk to the right of the case, with a 4x4 grid of pixels.</summary>
@@ -487,20 +539,30 @@ namespace SiliconForge.Game.Workshop
             if (kind == 2) Show(fanCoolerRoot, 0.25f, true);
         }
 
-        /// <summary>Lifts the processor out and drops the new one in. Returns how long it takes.</summary>
-        public float SwapChip(string label)
+        /// <summary>Lifts the processor out and drops the new one in, then refits the cooler if one was given. Returns how long it takes.</summary>
+        public float SwapChip(string label, int refitCooler = -1)
         {
-            StartCoroutine(SwapRoutine(label));
-            return 1.1f;
+            StartCoroutine(SwapRoutine(label, refitCooler));
+            return refitCooler > 0 ? 1.8f : 1.1f;
         }
 
-        IEnumerator SwapRoutine(string label)
+        IEnumerator SwapRoutine(string label, int refitCooler)
         {
             heatsinkRoot.SetActive(false);
             fanCoolerRoot.SetActive(false);
             yield return Lift(chipRoot);
             yield return new WaitForSeconds(0.1f);
             InstallChip(label);
+            if (refitCooler <= 0) yield break;
+            yield return new WaitForSeconds(0.7f);
+            InstallCooler(refitCooler);
+        }
+
+        /// <summary>Puts a cooler on without animation, for a machine carried over from an earlier build.</summary>
+        public void ShowCooler(int kind)
+        {
+            heatsinkRoot.SetActive(kind == 1);
+            fanCoolerRoot.SetActive(kind == 2);
         }
 
         /// <summary>0 is cool, 1 is about to shut down: the processor lid glows red.</summary>
@@ -525,6 +587,28 @@ namespace SiliconForge.Game.Workshop
             }
         }
 
+        /// <summary>The finished, powered machine with a picture on screen. Used by the build smoke test.</summary>
+        public void Showcase()
+        {
+            caseRoot.SetActive(true);
+            boardRoot.SetActive(true);
+            clockRoot.SetActive(true);
+            ramRoot.SetActive(true);
+            monitorRoot.SetActive(true);
+            InstallChip("CPU-II\n190 G", false);
+            InstallCounter("ROM\n16x6", false);
+            InstallPsu(100, false);
+            fanCoolerRoot.SetActive(true);
+            powered = true;
+            SetPowerLights(true, 1f);
+            fanTarget = 1100f;
+            displayGlow.intensity = 0.12f;
+            SetPixels(new[] { 9, 0, 9, 6 });
+            SetReadout(7, 3);
+            SetClockLed(true);
+            SetFocus(new Vector3(0.4f, 0.16f, 0f), 4.1f);
+        }
+
         public void SetFocus(Vector3 point, float viewDistance)
         {
             focus = point;
@@ -543,6 +627,13 @@ namespace SiliconForge.Game.Workshop
         }
 
         /// <summary>Puts the machine from earlier eras back on the bench without animation.</summary>
+        /// <summary>The First Picture machine, for builds that start from it.</summary>
+        public void ShowComputerParts()
+        {
+            ramRoot.SetActive(true);
+            monitorRoot.SetActive(true);
+        }
+
         public void BuildPreinstalled(string chipLabel, int psuWatts, bool clock = false, string socket2Label = null)
         {
             caseRoot.SetActive(true);
@@ -745,6 +836,7 @@ namespace SiliconForge.Game.Workshop
             if (!Physics.Raycast(ray, out var hit, 20f)) return;
             var dip = hit.collider.GetComponent<DipSwitch>();
             if (dip != null) { SwitchClicked?.Invoke(dip.bit); return; }
+            if (hit.collider.GetComponent<ArcadeButton>() != null) { ArcadeButtonClicked?.Invoke(); return; }
             if (hit.collider.GetComponent<PowerButton>() != null) PowerButtonClicked?.Invoke();
         }
 
@@ -801,7 +893,10 @@ namespace SiliconForge.Game.Workshop
 
         Material Mat(Color color, float smoothness, float metallic = 0f, bool emissive = false, Color? emission = null)
         {
-            var m = new Material(litShader);
+            // Copy the material assets in Resources when they exist: a build only ships the shader variants
+            // (like emission) that some asset uses. Shader.Find is the editor fallback.
+            var template = emissive ? glowTemplate : plainTemplate;
+            var m = template != null ? new Material(template) : new Material(litShader);
             m.SetColor("_BaseColor", color);
             m.color = color;
             m.SetFloat("_Smoothness", smoothness);

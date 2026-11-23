@@ -32,6 +32,10 @@ namespace SiliconForge.Core
         public string program;
         /// <summary>The last program flashed in First Picture (Processor II).</summary>
         public string pixelsProgram;
+        /// <summary>The last program flashed in Press Start (Processor III).</summary>
+        public string playProgram;
+        /// <summary>The cooler on the player's processor: -1 none fitted yet, 0 bare, 1 heatsink, 2 fan cooler.</summary>
+        public int machineCooler = -1;
 
         public LevelProgress Progress(string id)
         {

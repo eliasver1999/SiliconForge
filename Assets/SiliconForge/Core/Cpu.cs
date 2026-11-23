@@ -14,10 +14,31 @@ namespace SiliconForge.Core
         public const int Add = 1; // A = A + N (wraps at 16)
         public const int Jmp = 2; // PC = N
         public const int Jz = 3;  // if A == 0 then PC = N
-        public const int Sta = 4; // write A to memory row N (0-3). Processor II only.
-        public static readonly string[] Names = { "LDI", "ADD", "JMP", "JZ", "STA" };
-        /// <summary>Labels for a 3-bit opcode column; 5 to 7 are unused.</summary>
-        public static readonly string[] OpLabels = { "LDI", "ADD", "JMP", "JZ", "STA", "op5", "op6", "op7" };
+        public const int Sta = 4; // write A to memory row N (0-3). Processor II and up.
+        public const int Lda = 5; // A = memory row N. Processor III.
+        public const int Ada = 6; // A = A + memory row N. Processor III.
+        public const int Jb = 7;  // jump to N if the button input is 1. Processor III.
+        public static readonly string[] Names = { "LDI", "ADD", "JMP", "JZ", "STA", "LDA", "ADA", "JB" };
+        /// <summary>Labels for a 3-bit opcode column.</summary>
+        public static readonly string[] OpLabels = Names;
+
+        /// <summary>Which processor first understands an opcode: 1, 2 (Processor II) or 3 (Processor III).</summary>
+        public static int Level(int op) => op <= Jz ? 1 : op == Sta ? 2 : 3;
+        public static bool UsesRow(int op) => op == Sta || op == Lda || op == Ada;
+
+        /// <summary>Processor III semantics, with memory and the button.</summary>
+        public static void Execute(int word, ref int pc, ref int a, int[] memory, bool button)
+        {
+            int n = N(word);
+            switch (Op(word))
+            {
+                case Sta: memory[n & 3] = a; pc = (pc + 1) & 15; break;
+                case Lda: a = memory[n & 3]; pc = (pc + 1) & 15; break;
+                case Ada: a = (a + memory[n & 3]) & 15; pc = (pc + 1) & 15; break;
+                case Jb: pc = button ? n : (pc + 1) & 15; break;
+                default: Execute(word, ref pc, ref a); break;
+            }
+        }
         public const int RomSize = 16;
 
         public static int Encode(int op, int n) => ((op & 7) << 4) | (n & 15);
@@ -50,8 +71,8 @@ namespace SiliconForge.Core
     /// <summary>Turns assembly text into ROM words. Supports labels ("loop:"), comments (";" or "#") and numbers 0 to 15.</summary>
     public static class Assembler
     {
-        /// <param name="allowStore">STA only exists on Processor II.</param>
-        public static int[] Assemble(string source, List<AssemblyError> errors, bool allowStore = false)
+        /// <param name="processor">1 for the first processor, 2 for Processor II (adds STA), 3 for Processor III (adds LDA, ADA, JB).</param>
+        public static int[] Assemble(string source, List<AssemblyError> errors, int processor = 1)
         {
             var rom = new int[Isa.RomSize];
             var lines = (source ?? "").Replace("\r", "").Split('\n');
@@ -93,9 +114,14 @@ namespace SiliconForge.Core
             {
                 var (line, opText, argText) = pending[k];
                 int op = Array.FindIndex(Isa.Names, n => string.Equals(n, opText, StringComparison.OrdinalIgnoreCase));
-                string known = allowStore ? "LDI, ADD, JMP, JZ or STA" : "LDI, ADD, JMP or JZ";
+                string known = processor >= 3 ? "LDI, ADD, JMP, JZ, STA, LDA, ADA or JB" : processor == 2 ? "LDI, ADD, JMP, JZ or STA" : "LDI, ADD, JMP or JZ";
                 if (op < 0) { errors.Add(new AssemblyError { line = line, message = $"Unknown instruction '{opText}'. Use {known}." }); continue; }
-                if (op == Isa.Sta && !allowStore) { errors.Add(new AssemblyError { line = line, message = "STA needs Processor II, which you build in Era VI." }); continue; }
+                if (Isa.Level(op) > processor)
+                {
+                    string needs = Isa.Level(op) == 2 ? "Processor II, which you build in Era VI" : "Processor III, which you build in Era VII";
+                    errors.Add(new AssemblyError { line = line, message = $"{Isa.Names[op]} needs {needs}." });
+                    continue;
+                }
                 int value;
                 if (int.TryParse(argText, out value))
                 {
@@ -106,7 +132,7 @@ namespace SiliconForge.Core
                     errors.Add(new AssemblyError { line = line, message = $"There's no label called '{argText}'." });
                     continue;
                 }
-                if (op == Isa.Sta && value > 3) { errors.Add(new AssemblyError { line = line, message = "Memory has rows 0 to 3, so STA takes 0 to 3." }); continue; }
+                if (Isa.UsesRow(op) && value > 3) { errors.Add(new AssemblyError { line = line, message = $"Memory has rows 0 to 3, so {Isa.Names[op]} takes 0 to 3." }); continue; }
                 rom[k] = Isa.Encode(op, value);
             }
             return rom;

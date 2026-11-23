@@ -463,6 +463,9 @@ namespace SiliconForge.Game.UI
         VisualElement BuildBrief()
         {
             var brief = Ui.Div("brief");
+            // Wide contracts (Processor III has six input columns) get a wider panel so the table fits.
+            float needed = EstimateTableWidth() + 48f;
+            if (needed > 404f) brief.style.width = needed;
             var scroll = new ScrollView(ScrollViewMode.Vertical);
             scroll.AddToClassList("brief__scroll");
             scroll.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
@@ -517,7 +520,7 @@ namespace SiliconForge.Game.UI
                 var best = Ui.Div("row");
                 best.style.marginTop = 14;
                 best.Add(Ui.Pips(progress.stars));
-                best.Add(Ui.Text($"Best: {progress.bestGates} gates", "t-dim"));
+                best.Add(Ui.Text(progress.bestGates == 1 ? "Best: 1 gate" : $"Best: {progress.bestGates} gates", "t-dim"));
                 inner.Add(best);
             }
 
@@ -654,6 +657,17 @@ namespace SiliconForge.Game.UI
             public BitGroup group;
 
             public string Format(int bits) => group != null ? group.Format(bits) : (bits & mask) != 0 ? "1" : "0";
+        }
+
+        /// <summary>Matches the cell widths in the stylesheet: 24px per pin, 38 for longer names, 44 for grouped numbers.</summary>
+        float EstimateTableWidth()
+        {
+            float CellWidth(Column c) => c.group != null && c.group.width > 1 ? 44f : c.name.Length > 2 ? 38f : 24f;
+            float width = 2f + 3f + 24f + 21f + 8f + 10f; // border, live-row bar, padding, separator, status dot, slack
+            if (level.IsSequential) width += 38f;
+            foreach (var c in Columns(level.inputs, level.inputGroups)) width += CellWidth(c);
+            foreach (var c in Columns(level.outputs, level.outputGroups)) width += CellWidth(c);
+            return width;
         }
 
         static List<Column> Columns(string[] names, BitGroup[] groups)

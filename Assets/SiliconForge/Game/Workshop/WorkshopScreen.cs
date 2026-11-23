@@ -32,8 +32,9 @@ namespace SiliconForge.Game.Workshop
 
         const string BootStarter = "; Counts up forever. Your goal: count down from 9 to 0, then stop.\nLDI 0\nloop: ADD 1\nJMP loop\n";
         const string PixelsStarter = "; Draws a frame. Your goal: the smiley.\nLDI 15\nSTA 0\nSTA 3\nLDI 9\nSTA 1\nSTA 2\nh: JMP h\n";
+        const string PlayStarter = "; Lights one pixel and waits. Your goal: move it left on every press.\nLDI 0\nSTA 1\nSTA 2\nSTA 3\nLDI 1\nSTA 0\nh: JMP h\n";
 
-        enum Mode { FirstLight, Heartbeat, Boot, Pixels }
+        enum Mode { FirstLight, Heartbeat, Boot, Pixels, Play }
         enum Kind { Install, Program, Cooler, Psu, Power }
 
         sealed class StepDef
@@ -50,9 +51,9 @@ namespace SiliconForge.Game.Workshop
         readonly LevelSpec level;
         readonly Mode mode;
         readonly WorkshopRig rig;
-        readonly Netlist adder, counter, cpu, ram;
+        readonly Netlist adder, counter, cpu, ram, press;
         readonly ulong[] adderState, counterState;
-        readonly int adderGates, counterGates, cpuGates, ramGates;
+        readonly int adderGates, counterGates, cpuGates, ramGates, pressGates;
         readonly float baseWatts;
         readonly List<StepDef> steps = new List<StepDef>();
 
@@ -72,6 +73,11 @@ namespace SiliconForge.Game.Workshop
         bool romFlashed;
         float heatTimer;
 
+        // Press Start's button: held from the on-screen button, or a short tap from clicking the 3D one.
+        bool buttonHeld;
+        float buttonTap;
+        bool ButtonDown => buttonHeld || buttonTap > 0f;
+
         readonly VisualElement[] psuRows = new VisualElement[PsuWatts.Length];
         readonly VisualElement[] coolerRows = new VisualElement[CoolerNames.Length];
         readonly VisualElement[] bitDots = new VisualElement[5];
@@ -88,17 +94,20 @@ namespace SiliconForge.Game.Workshop
         int PowerIndex => IndexOf(Kind.Power);
         bool Done => current >= steps.Count;
         float Watts => level.wattsPerGate;
-        bool Programmable => mode == Mode.Boot || mode == Mode.Pixels;
+        bool Programmable => mode == Mode.Boot || mode == Mode.Pixels || mode == Mode.Play;
+        bool HasScreen => mode == Mode.Pixels || mode == Mode.Play;
+        int Processor => mode == Mode.Play ? 3 : mode == Mode.Pixels ? 2 : 1;
         int TotalGates => mode switch
         {
             Mode.Boot => cpuGates,
             Mode.Pixels => cpuGates + ramGates,
+            Mode.Play => cpuGates + ramGates + pressGates,
             Mode.Heartbeat => adderGates + counterGates,
             _ => adderGates,
         };
         float Draw => TotalGates * Watts + baseWatts + (coolerInstalled >= 0 ? CoolerWatts[coolerInstalled] : 0);
         float Heat => cpuGates * Watts;
-        bool Overheating => mode == Mode.Pixels && coolerInstalled >= 0 && Heat > CoolerCapacity[coolerInstalled];
+        bool Overheating => HasScreen && coolerInstalled >= 0 && Heat > CoolerCapacity[coolerInstalled];
 
         public WorkshopScreen(GameApp app, LevelSpec level)
         {
@@ -109,11 +118,13 @@ namespace SiliconForge.Game.Workshop
                 "TICK" => Mode.Heartbeat,
                 "BOOT" => Mode.Boot,
                 "PIXELS" => Mode.Pixels,
+                "PLAY" => Mode.Play,
                 _ => Mode.FirstLight,
             };
 
             string[] needed = mode switch
             {
+                Mode.Play => new[] { "CPU3", "RAM4", "PRESS" },
                 Mode.Pixels => new[] { "CPU2", "RAM4" },
                 Mode.Boot => new[] { "CPU" },
                 Mode.Heartbeat => new[] { "ADD4", "COUNT4" },
@@ -144,10 +155,20 @@ namespace SiliconForge.Game.Workshop
                 cpu = Netlist.Compile(cpuDef.circuit, app.Catalog, 8, 8);
                 cpuGates = cpu.GateCount;
             }
-            if (mode == Mode.Pixels && app.Catalog.TryGetChip("CPU2", out var cpu2Def) && app.Catalog.TryGetChip("RAM4", out var ramDef))
+            if (mode == Mode.Pixels && app.Catalog.TryGetChip("CPU2", out var cpu2Def))
             {
                 cpu = Netlist.Compile(cpu2Def.circuit, app.Catalog, 9, 9);
                 cpuGates = cpu.GateCount;
+            }
+            if (mode == Mode.Play && app.Catalog.TryGetChip("CPU3", out var cpu3Def) && app.Catalog.TryGetChip("PRESS", out var pressDef))
+            {
+                cpu = Netlist.Compile(cpu3Def.circuit, app.Catalog, 14, 9);
+                cpuGates = cpu.GateCount;
+                press = Netlist.Compile(pressDef.circuit, app.Catalog, 2, 1);
+                pressGates = press.GateCount;
+            }
+            if (HasScreen && app.Catalog.TryGetChip("RAM4", out var ramDef))
+            {
                 ram = Netlist.Compile(ramDef.circuit, app.Catalog, 8, 4);
                 ramGates = ram.GateCount;
             }
@@ -155,12 +176,13 @@ namespace SiliconForge.Game.Workshop
             baseWatts = BoardWatts
                 + (mode != Mode.FirstLight ? ClockWatts : 0f)
                 + (Programmable ? RomWatts : 0f)
-                + (mode == Mode.Pixels ? ScreenWatts : 0f);
+                + (HasScreen ? ScreenWatts : 0f);
 
             rig = new GameObject("Workshop").AddComponent<WorkshopRig>();
             rig.Build(app.MainCamera);
             rig.SwitchClicked += OnSwitch;
             rig.PowerButtonClicked += () => { if (!Done && current == PowerIndex) PowerOn(); };
+            rig.ArcadeButtonClicked += () => { if (mode == Mode.Play) buttonTap = 0.4f; };
 
             DefineSteps();
 
@@ -181,6 +203,15 @@ namespace SiliconForge.Game.Workshop
                         int oldCpu = app.Catalog.Has("CPU") ? app.Catalog.GateCost("CPU") : 0;
                         rig.BuildPreinstalled($"CPU-4\n{oldCpu} G", PsuWatts[psuInstalled], true, "ROM\n16x6");
                         rig.SetFocus(new Vector3(0.4f, 0.16f, 0f), 4.1f);
+                        break;
+                    case Mode.Play:
+                        int cpu2 = app.Catalog.Has("CPU2") ? app.Catalog.GateCost("CPU2") : 0;
+                        rig.BuildPreinstalled($"CPU-II\n{cpu2} G", PsuWatts[psuInstalled], true, "ROM\n16x6");
+                        rig.ShowComputerParts();
+                        coolerInstalled = Mathf.Clamp(app.Save.machineCooler, -1, CoolerNames.Length - 1);
+                        coolerSelected = coolerInstalled >= 0 ? coolerInstalled : 1;
+                        if (coolerInstalled >= 0) rig.ShowCooler(coolerInstalled);
+                        rig.SetFocus(new Vector3(0.42f, 0.15f, -0.05f), 4.2f);
                         break;
                 }
                 a = 0;
@@ -234,6 +265,18 @@ namespace SiliconForge.Game.Workshop
                     AddStep(Kind.Program, "Program ROM", "Rewrite the ROM with a program for Processor II. STA writes A into a row of RAM, and the screen shows it.", "Write",
                         OpenEditor);
                     break;
+
+                case Mode.Play:
+                    AddStep(Kind.Install, "Processor III", $"{cpuGates} gates, {cpuGates * Watts:0.0} W. It can read memory and the button.", "Swap",
+                        () => Busy(rig.SwapChip($"CPU-III\n{cpuGates} G", coolerInstalled)));
+                    AddStep(Kind.Install, "Press Detector", $"Your {pressGates}-gate chip turns a held button into one clean signal per press.", "Install",
+                        () => rig.InstallPressChip("BTN"));
+                    AddStep(Kind.Install, "Arcade button", "A big red button on the front of the case, wired through your press detector to the processor's Btn input.", "Mount",
+                        rig.InstallArcadeButton);
+                    AddStep(Kind.Cooler, "Cooling", $"Processor III makes {Heat:0.0} W of heat. Your cooler from First Picture is still fitted; swap it if it can't keep up.", null, null);
+                    AddStep(Kind.Program, "Program ROM", "Write a program for Processor III. JB jumps while the button is pressed, and LDA and ADA read memory.", "Write",
+                        OpenEditor);
+                    break;
             }
 
             string psuDesc = mode switch
@@ -244,7 +287,7 @@ namespace SiliconForge.Game.Workshop
                 _ => $"Board, clock, ROM and screen need {baseWatts:0} W, plus {Watts} W per gate, plus the cooler's fan if it has one.",
             };
             AddStep(Kind.Psu, "Power supply", psuDesc, null, null);
-            AddStep(Kind.Power, "Switch it on", mode == Mode.Pixels
+            AddStep(Kind.Power, "Switch it on", HasScreen
                 ? "If the supply can't carry the load, the machine browns out. If the cooler can't keep up, it shuts down."
                 : "If the supply can't carry the load, the machine browns out.", null, null);
         }
@@ -265,8 +308,10 @@ namespace SiliconForge.Game.Workshop
 
         public void Tick(float dt)
         {
+            if (rig == null) return;
+            if (mode == Mode.Play) UpdateButton(dt);
             // "running" turns on only after the power-on animation, once the machine exists.
-            if (rig == null || !rig.Powered || !running) return;
+            if (!rig.Powered || !running) return;
 
             switch (mode)
             {
@@ -291,13 +336,22 @@ namespace SiliconForge.Game.Workshop
                     break;
 
                 case Mode.Pixels:
-                    AdvanceClock(dt, high => computer.SetClock(high, resetPending));
+                case Mode.Play:
+                    bool down = ButtonDown;
+                    AdvanceClock(dt, high => computer.SetClock(high, resetPending, down));
                     rig.SetReadout(computer.A, computer.Pc);
                     rig.SetPixels(computer.Rows());
                     ShowCpu(computer.Pc, computer.A, computer.CurrentWord);
                     if (Overheating) UpdateHeat(dt);
                     break;
             }
+        }
+
+        /// <summary>Runs even while the machine is off, so the button cap always follows the player's hand.</summary>
+        void UpdateButton(float dt)
+        {
+            if (buttonTap > 0f) buttonTap -= dt;
+            rig.SetArcadePressed(ButtonDown);
         }
 
         void ShowCpu(int pc, int value, int word)
@@ -317,7 +371,7 @@ namespace SiliconForge.Game.Workshop
             rig.PowerOff();
             Sfx.Play(SfxId.Brownout);
             readout.RemoveFromClassList("readout--visible");
-            SetStatus($"Thermal shutdown. Your processor makes {Heat:0.0} W of heat but the {CoolerNames[coolerInstalled].ToLowerInvariant()} only handles {CoolerCapacity[coolerInstalled]} W. Fit better cooling, or trim gates from Processor II.", true);
+            SetStatus($"Thermal shutdown. Your processor makes {Heat:0.0} W of heat but the {CoolerNames[coolerInstalled].ToLowerInvariant()} only handles {CoolerCapacity[coolerInstalled]} W. Fit better cooling, or trim gates from {(mode == Mode.Play ? "Processor III" : "Processor II")}.", true);
             Refresh();
         }
 
@@ -378,7 +432,10 @@ namespace SiliconForge.Game.Workshop
         void AdvanceStep()
         {
             current++;
-            if (current == PsuIndex && psuInstalled >= 0) current = PowerIndex;
+            // A supply or cooler carried over from an earlier build doesn't need choosing again (it can still be swapped).
+            while (current < PowerIndex &&
+                   ((steps[current].Kind == Kind.Psu && psuInstalled >= 0) || (steps[current].Kind == Kind.Cooler && coolerInstalled >= 0)))
+                current++;
             if (current < steps.Count)
             {
                 switch (steps[current].Kind)
@@ -443,6 +500,7 @@ namespace SiliconForge.Game.Workshop
                         Mode.FirstLight => "come back with a leaner adder",
                         Mode.Heartbeat => "trim gates from your adder or counter",
                         Mode.Boot => "trim gates from your processor",
+                        Mode.Play => "trim gates from Processor III, your Memory or your press detector",
                         _ => "trim gates from Processor II or your Memory",
                     };
                     SetStatus($"Brownout. Your machine needs {Draw:0.0} W but the {PsuNames[psuInstalled]} only delivers {PsuWatts[psuInstalled]} W. Pick a bigger supply, or {leaner}.", true);
@@ -465,6 +523,10 @@ namespace SiliconForge.Game.Workshop
                         break;
                     case Mode.Pixels:
                         computer = new ComputerMachine(cpu, ram, rom);
+                        computer.Reset();
+                        break;
+                    case Mode.Play:
+                        computer = new ComputerMachine(cpu, ram, press, rom);
                         computer.Reset();
                         break;
                 }
@@ -499,13 +561,17 @@ namespace SiliconForge.Game.Workshop
             bool ok;
             string reason;
             if (mode == Mode.Boot) ok = CpuGoals.CheckCountdown(cpu, rom, out reason);
+            else if (mode == Mode.Play) ok = ComputerGoals.CheckMovingLight(cpu, ram, press, rom, out reason);
             else ok = ComputerGoals.CheckPicture(cpu, ram, rom, ComputerGoals.Smiley, out reason);
 
             if (ok)
             {
-                SetStatus(mode == Mode.Boot
-                    ? "Your processor is running your program: 9 down to 0, then it stops. Edit the program any time to try something else."
-                    : "There it is: a smiley, drawn by your program on your processor into your memory. Edit the program to draw anything you like.");
+                SetStatus(mode switch
+                {
+                    Mode.Boot => "Your processor is running your program: 9 down to 0, then it stops. Edit the program any time to try something else.",
+                    Mode.Play => "Press the red button, or hold the Button control below: the light moves one step per press. Your program, your chips, your game.",
+                    _ => "There it is: a smiley, drawn by your program on your processor into your memory. Edit the program to draw anything you like.",
+                });
                 Complete();
             }
             else
@@ -520,6 +586,7 @@ namespace SiliconForge.Game.Workshop
         {
             bool first = !app.Save.IsSolved(level.id);
             current = steps.Count;
+            if (HasScreen) app.Save.machineCooler = coolerInstalled;
             app.RecordSolve(level, TotalGates, Stars(), null);
             Refresh();
             if (first) app.Root.schedule.Execute(() => { Sfx.Play(SfxId.Success); ShowSuccess(); }).ExecuteLater(1600);
@@ -540,7 +607,7 @@ namespace SiliconForge.Game.Workshop
         int Stars()
         {
             bool psuRight = psuInstalled == SmallestSufficientPsu();
-            bool coolerRight = mode != Mode.Pixels || coolerInstalled == SmallestSufficientCooler();
+            bool coolerRight = !HasScreen || coolerInstalled == SmallestSufficientCooler();
             return psuRight && coolerRight ? 3 : 2;
         }
 
@@ -555,6 +622,7 @@ namespace SiliconForge.Game.Workshop
 
             string body = mode switch
             {
+                Mode.Play => "You press a button and a light moves. A program you wrote reads a detector you designed on a processor you built from single NAND gates. That's a game.",
                 Mode.Pixels => "Your processor wrote a picture into memory you built, and a screen shows it. Every part of that path is yours.",
                 Mode.Boot => "A processor you built from single NAND gates is running a program you wrote. That's a computer.",
                 Mode.Heartbeat => "Your machine runs on its own now: a clock you fitted, a counter you designed, feeding an adder you designed.",
@@ -563,7 +631,7 @@ namespace SiliconForge.Game.Workshop
             if (stars == 3) body += " It runs on the smallest supply that could carry it.";
             else if (psuInstalled != SmallestSufficientPsu()) body += $" A {PsuWatts[SmallestSufficientPsu()]} W supply would have been enough.";
             else body += $" A {CoolerNames[SmallestSufficientCooler()].ToLowerInvariant()} would have been enough.";
-            string title = mode switch { Mode.Pixels => "First picture", Mode.Boot => "It computes", Mode.Heartbeat => "It has a pulse", _ => "First light" };
+            string title = mode switch { Mode.Play => "Press start", Mode.Pixels => "First picture", Mode.Boot => "It computes", Mode.Heartbeat => "It has a pulse", _ => "First light" };
 
             VisualElement overlay = null;
             var card = Modal.Card(Ui.Badge(), title, body,
@@ -642,19 +710,19 @@ namespace SiliconForge.Game.Workshop
 
         void OpenEditor()
         {
-            bool store = mode == Mode.Pixels;
+            int processor = Processor;
             var card = new VisualElement();
             card.AddToClassList("editor-card");
 
             var head = Ui.Div("editor__head");
             var titles = new VisualElement();
             titles.Add(Ui.Text("PROGRAM ROM", "t-eyebrow"));
-            titles.Add(Ui.Text(store ? "Program Processor II" : "Write your program", "editor__title"));
+            titles.Add(Ui.Text(processor == 3 ? "Program Processor III" : processor == 2 ? "Program Processor II" : "Write your program", "editor__title"));
             head.Add(titles);
             card.Add(head);
 
-            string saved = store ? app.Save.pixelsProgram : app.Save.program;
-            string starter = store ? PixelsStarter : BootStarter;
+            string saved = processor == 3 ? app.Save.playProgram : processor == 2 ? app.Save.pixelsProgram : app.Save.program;
+            string starter = processor == 3 ? PlayStarter : processor == 2 ? PixelsStarter : BootStarter;
             var body = Ui.Div("editor__body");
             var field = new TextField
             {
@@ -672,10 +740,21 @@ namespace SiliconForge.Game.Workshop
             help.Add(HelpRow("ADD n", "A = A + n, wraps past 15"));
             help.Add(HelpRow("JMP n", "go to instruction n"));
             help.Add(HelpRow("JZ n", "go to n if A is 0"));
-            if (store) help.Add(HelpRow("STA n", "write A to screen row n (0 to 3)"));
+            if (processor >= 2) help.Add(HelpRow("STA n", "write A to screen row n (0 to 3)"));
+            if (processor >= 3)
+            {
+                help.Add(HelpRow("LDA n", "A = screen row n"));
+                help.Add(HelpRow("ADA n", "A = A + screen row n"));
+                help.Add(HelpRow("JB n", "go to n if the button is pressed"));
+            }
             help.Add(Ui.Text("Numbers are 0 to 15. Name a line with a label like \"loop:\" and jump to it by name. Anything after ; is a comment. Up to 16 instructions.", "editor__note"));
             help.Add(Ui.Text("EXAMPLES", "t-eyebrow", "editor__examples"));
-            if (store)
+            if (processor == 3)
+            {
+                help.Add(Ui.Button("Light up", () => field.value = PlayStarter, "btn--small", "editor__example"));
+                help.Add(Ui.Button("Fill on press", () => field.value = "LDI 0\nSTA 0\nSTA 1\nSTA 2\nSTA 3\nwait: JB fill\nJMP wait\nfill: LDI 15\nSTA 0\nSTA 1\nSTA 2\nSTA 3\nh: JMP h\n", "btn--small", "editor__example"));
+            }
+            else if (processor == 2)
             {
                 help.Add(Ui.Button("Frame", () => field.value = PixelsStarter, "btn--small", "editor__example"));
                 help.Add(Ui.Button("Checkerboard", () => field.value = "LDI 10\nSTA 0\nSTA 2\nLDI 5\nSTA 1\nSTA 3\nh: JMP h\n", "btn--small", "editor__example"));
@@ -698,7 +777,7 @@ namespace SiliconForge.Game.Workshop
             actions.Add(Ui.Button("Flash ROM", () =>
             {
                 var list = new List<AssemblyError>();
-                var words = Assembler.Assemble(field.value, list, store);
+                var words = Assembler.Assemble(field.value, list, processor);
                 if (list.Count > 0)
                 {
                     errors.text = string.Join("\n", list.ConvertAll(e => e.ToString()));
@@ -706,7 +785,8 @@ namespace SiliconForge.Game.Workshop
                     Sfx.Play(SfxId.Fail);
                     return;
                 }
-                if (store) app.Save.pixelsProgram = field.value;
+                if (processor == 3) app.Save.playProgram = field.value;
+                else if (processor == 2) app.Save.pixelsProgram = field.value;
                 else app.Save.program = field.value;
                 app.Persist();
                 Modal.Close(overlay);
@@ -768,6 +848,11 @@ namespace SiliconForge.Game.Workshop
             }
             switch (mode)
             {
+                case Mode.Play:
+                    Stat("PROCESSOR III", $"{cpuGates} gates");
+                    Stat("MEMORY", $"{ramGates} gates");
+                    Stat("HEAT", $"{Heat:0.0} W");
+                    break;
                 case Mode.Pixels:
                     Stat("PROCESSOR II", $"{cpuGates} gates");
                     Stat("MEMORY", $"{ramGates} gates");
@@ -820,7 +905,10 @@ namespace SiliconForge.Game.Workshop
 
             var hint = Ui.Div("viewport__hint");
             hint.pickingMode = PickingMode.Ignore;
-            hint.Add(Ui.Text(Programmable ? "Drag to orbit  ·  Scroll to zoom" : "Drag to orbit  ·  Scroll to zoom  ·  Click the switches", "viewport__hint-text"));
+            string hintText = mode == Mode.Play ? "Drag to orbit  ·  Scroll to zoom  ·  Click the red button"
+                : Programmable ? "Drag to orbit  ·  Scroll to zoom"
+                : "Drag to orbit  ·  Scroll to zoom  ·  Click the switches";
+            hint.Add(Ui.Text(hintText, "viewport__hint-text"));
             viewport.Add(hint);
 
             readout = Ui.Div("readout");
@@ -847,12 +935,39 @@ namespace SiliconForge.Game.Workshop
                     resultValue = Ui.Text("0", "readout__result");
                     card.Add(resultValue);
                     AddClockControls(card);
+                    if (mode == Mode.Play) card.Add(HoldButton());
                     card.Add(Ui.Button("Edit program", OpenEditor, "btn--small", "readout__edit"));
                     break;
             }
             readout.Add(card);
             viewport.Add(readout);
             return viewport;
+        }
+
+        /// <summary>An on-screen version of the arcade button: held while the pointer is down on it.</summary>
+        VisualElement HoldButton()
+        {
+            var button = Ui.Div("btn", "btn--small", "hold-button");
+            var label = Ui.Text("Button", "btn__label");
+            label.pickingMode = PickingMode.Ignore;
+            button.Add(label);
+            button.RegisterCallback<PointerDownEvent>(e =>
+            {
+                buttonHeld = true;
+                button.AddToClassList("hold-button--down");
+                button.CapturePointer(e.pointerId);
+                Sfx.Play(SfxId.Toggle);
+                e.StopPropagation();
+            });
+            void Release(int id)
+            {
+                buttonHeld = false;
+                button.RemoveFromClassList("hold-button--down");
+                if (button.HasPointerCapture(id)) button.ReleasePointer(id);
+            }
+            button.RegisterCallback<PointerUpEvent>(e => Release(e.pointerId));
+            button.RegisterCallback<PointerCaptureOutEvent>(e => { buttonHeld = false; button.RemoveFromClassList("hold-button--down"); });
+            return button;
         }
 
         static VisualElement Readout(string name, out Label value)
@@ -938,7 +1053,10 @@ namespace SiliconForge.Game.Workshop
             inner.Add(Ui.Text($"ERA {era.numeral}  ·  {era.name.ToUpperInvariant()}", "t-eyebrow"));
             inner.Add(Ui.Text(level.title, "brief__title"));
             inner.Add(Ui.Text(level.brief, "t-body"));
-            if (mode == Mode.Pixels) inner.Add(TargetPreview(ComputerGoals.Smiley));
+            if (mode == Mode.Pixels) inner.Add(TargetPreview("TARGET", ComputerGoals.Smiley, r => $"row {r} = {ComputerGoals.Smiley[r]}"));
+            if (mode == Mode.Play)
+                inner.Add(TargetPreview("ROW 0, PRESS BY PRESS", ComputerGoals.LightSteps,
+                    k => k == 0 ? $"at start = {ComputerGoals.LightSteps[k]}" : $"press {k} = {ComputerGoals.LightSteps[k]}"));
             inner.Add(Ui.Div("divider"));
 
             for (int i = 0; i < steps.Count; i++)
@@ -962,6 +1080,7 @@ namespace SiliconForge.Game.Workshop
             var status = Ui.Div("status-line");
             string first = mode switch
             {
+                Mode.Play => "Your machine from First Picture is back on the bench. Start by swapping in Processor III.",
                 Mode.Pixels => "Your machine from Boot is back on the bench. Start by swapping in Processor II.",
                 Mode.Boot => "Your machine is back on the bench. Start by pulling the old chips.",
                 Mode.Heartbeat => "Your machine from First Light is back on the bench. Start by fitting the clock.",
@@ -976,13 +1095,13 @@ namespace SiliconForge.Game.Workshop
             return panel;
         }
 
-        /// <summary>A small picture of the goal: four rows of four pixels.</summary>
-        static VisualElement TargetPreview(int[] rows)
+        /// <summary>A small picture of the goal: rows of four pixels, each with a caption.</summary>
+        static VisualElement TargetPreview(string title, int[] rows, Func<int, string> caption)
         {
             var box = Ui.Div("target");
-            box.Add(Ui.Text("TARGET", "t-eyebrow"));
+            box.Add(Ui.Text(title, "t-eyebrow"));
             var grid = Ui.Div("target__grid");
-            for (int r = 0; r < 4; r++)
+            for (int r = 0; r < rows.Length; r++)
             {
                 var row = Ui.Div("target__row");
                 for (int c = 0; c < 4; c++)
@@ -991,7 +1110,7 @@ namespace SiliconForge.Game.Workshop
                     if (((rows[r] >> (3 - c)) & 1) != 0) px.AddToClassList("target__px--on");
                     row.Add(px);
                 }
-                row.Add(Ui.Text($"row {r} = {rows[r]}", "target__value"));
+                row.Add(Ui.Text(caption(r), "target__value"));
                 grid.Add(row);
             }
             box.Add(grid);

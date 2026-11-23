@@ -249,6 +249,45 @@ namespace SiliconForge.EditorTools
                 b.Out(b.i[6], 0, 8);                                           // W = Op2
                 return b.c;
             },
+            ["PRESS"] = b =>
+            {
+                int s1 = b.Part("DFF"), s2 = b.Part("DFF"), s3 = b.Part("DFF");
+                b.Wire(b.i[0], 0, s1, 0); b.Wire(s1, 0, s2, 0); b.Wire(s2, 0, s3, 0);
+                foreach (var f in new[] { s1, s2, s3 }) b.Wire(b.i[1], 0, f, 1);
+                int recent = b.Nand(b.Not(s1), 0, b.Not(s2), 0);              // s1 OR s2
+                b.Out(b.Not(b.Nand(recent, 0, b.Not(s3), 0)), 0, 0);          // ... AND NOT s3
+                return b.c;
+            },
+            ["CPU3"] = b =>
+            {
+                int opnd = b.Part("MUX4"), sum = b.Part("ADD4"), val = b.Part("MUX4"), reg = b.Part("REG4"), zero = b.Part("ZERO"), pc = b.Part("PC");
+                for (int k = 0; k < 4; k++)
+                {
+                    b.Wire(b.i[k], 0, opnd, k); b.Wire(b.i[7 + k], 0, opnd, 4 + k);   // operand: N or M
+                    b.Wire(reg, k, sum, k); b.Wire(opnd, k, sum, 4 + k);             // A + operand
+                    b.Wire(opnd, k, val, k); b.Wire(sum, k, val, 4 + k);             // load operand or sum
+                    b.Wire(val, k, reg, k);
+                    b.Wire(reg, k, zero, k);
+                    b.Wire(b.i[k], 0, pc, 3 + k);
+                    b.Out(pc, k, k);
+                    b.Out(reg, k, 4 + k);
+                }
+                int op0 = b.i[4], op1 = b.i[5], op2 = b.i[6];
+                b.Wire(op2, 0, opnd, 8);
+                b.Wire(Xor(b, op0, 0, op2, 0, out _), 0, val, 8);                  // ADD and ADA add
+                int nOp0 = b.Not(op0), nOp1 = b.Not(op1), nOp2 = b.Not(op2);
+                int load = Mux(b, nOp1, 0, Xor(b, op1, 0, op0, 0, out _), 0, op2, nOp2); // Op2 ? Op1^Op0 : !Op1
+                b.Wire(load, 0, reg, 4);
+                b.Wire(b.i[12], 0, reg, 5);
+                int low = b.Nand(op0, 0, b.Not(zero), 0);                          // JMP, or JZ with A = 0
+                int high = b.Not(b.Nand(op0, 0, b.i[11], 0));                      // JB with the button down
+                b.Wire(b.Not(b.Nand(op1, 0, Mux(b, low, 0, high, 0, op2, nOp2), 0)), 0, pc, 2);
+                b.Wire(b.i[12], 0, pc, 0);
+                b.Wire(b.i[13], 0, pc, 1);
+                int either = b.Nand(nOp1, 0, nOp0, 0);                             // Op1 OR Op0
+                b.Out(b.Not(b.Nand(op2, 0, b.Not(either), 0)), 0, 8);              // W only for STA
+                return b.c;
+            },
         };
 
         static int Xor(Board b, int a, int ap, int c, int cp, out int first)
@@ -342,7 +381,8 @@ namespace SiliconForge.EditorTools
                 progress.solved = true;
                 progress.stars = 3;
             }
-            save.machinePsuWatts = 60;
+            save.machinePsuWatts = 100;
+            save.machineCooler = 2;
             report = log.ToString();
             return save;
         }

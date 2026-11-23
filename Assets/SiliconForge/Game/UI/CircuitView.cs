@@ -8,7 +8,7 @@ namespace SiliconForge.Game.UI
 {
     /// <summary>
     /// The interactive board. Left-drag on empty space draws a selection box, right- or middle-drag pans,
-    /// the wheel zooms. Parts can be moved as a group, copied and pasted. Pins show a tooltip with their name and value.
+    /// the wheel zooms. Parts can be moved as a group, copied and pasted. Pins show a pinTip with their name and value.
     /// It edits a CircuitData in place and raises Edited after every change.
     /// </summary>
     public sealed class CircuitView : VisualElement
@@ -33,8 +33,8 @@ namespace SiliconForge.Game.UI
         readonly VisualElement content;
         readonly WireLayer wireLayer;
         readonly VisualElement selectionBox;
-        readonly VisualElement tooltip;
-        readonly Label tooltipName, tooltipValue;
+        readonly VisualElement pinTip;
+        readonly Label pinTipName, pinTipValue;
         readonly Dictionary<int, PartElement> elements = new Dictionary<int, PartElement>();
         readonly Dictionary<long, WireData> drivers = new Dictionary<long, WireData>();
         readonly HashSet<int> selected = new HashSet<int>();
@@ -61,7 +61,7 @@ namespace SiliconForge.Game.UI
         readonly Dictionary<int, Vector2> dragStarts = new Dictionary<int, Vector2>();
         PinRef wireFrom;
         Vector2 wireCursor;
-        PinElement hoverPin, tooltipPin;
+        PinElement hoverPin, pinTipPin;
         object rightClickTarget;
         bool boxAdditive;
         readonly HashSet<int> boxBase = new HashSet<int>();
@@ -89,15 +89,15 @@ namespace SiliconForge.Game.UI
             selectionBox.AddToClassList("selection-box");
             Add(selectionBox);
 
-            tooltip = new VisualElement { pickingMode = PickingMode.Ignore };
-            tooltip.AddToClassList("pin-tip");
-            tooltipName = new Label { pickingMode = PickingMode.Ignore };
-            tooltipName.AddToClassList("pin-tip__name");
-            tooltipValue = new Label { pickingMode = PickingMode.Ignore };
-            tooltipValue.AddToClassList("pin-tip__value");
-            tooltip.Add(tooltipName);
-            tooltip.Add(tooltipValue);
-            Add(tooltip);
+            pinTip = new VisualElement { pickingMode = PickingMode.Ignore };
+            pinTip.AddToClassList("pin-tip");
+            pinTipName = new Label { pickingMode = PickingMode.Ignore };
+            pinTipName.AddToClassList("pin-tip__name");
+            pinTipValue = new Label { pickingMode = PickingMode.Ignore };
+            pinTipValue.AddToClassList("pin-tip__value");
+            pinTip.Add(pinTipName);
+            pinTip.Add(pinTipValue);
+            Add(pinTip);
 
             RegisterCallback<PointerDownEvent>(OnPointerDown);
             RegisterCallback<PointerMoveEvent>(OnPointerMove);
@@ -155,7 +155,7 @@ namespace SiliconForge.Game.UI
         public void RefreshSignals()
         {
             foreach (var e in elements.Values) e.Refresh(this);
-            if (tooltipPin != null) UpdateTooltipValue();
+            if (pinTipPin != null) UpdateTooltipValue();
             wireLayer.MarkDirtyRepaint();
         }
 
@@ -778,25 +778,25 @@ namespace SiliconForge.Game.UI
 
         void ShowTooltip(PinElement pin, Vector2 local)
         {
-            tooltipPin = pin;
-            tooltipName.text = PinName(pin.Ref);
+            pinTipPin = pin;
+            pinTipName.text = PinName(pin.Ref);
             UpdateTooltipValue();
-            tooltip.style.display = DisplayStyle.Flex;
-            tooltip.style.left = local.x + 16;
-            tooltip.style.top = local.y - 36;
+            pinTip.style.display = DisplayStyle.Flex;
+            pinTip.style.left = local.x + 16;
+            pinTip.style.top = local.y - 36;
         }
 
         void UpdateTooltipValue()
         {
-            bool on = PinValue(tooltipPin.Ref);
-            tooltipValue.text = on ? "1" : "0";
-            tooltipValue.EnableInClassList("pin-tip__value--on", on);
+            bool on = PinValue(pinTipPin.Ref);
+            pinTipValue.text = on ? "1" : "0";
+            pinTipValue.EnableInClassList("pin-tip__value--on", on);
         }
 
         void HideTooltip()
         {
-            tooltipPin = null;
-            tooltip.style.display = DisplayStyle.None;
+            pinTipPin = null;
+            pinTip.style.display = DisplayStyle.None;
         }
 
         string PinName(PinRef r)

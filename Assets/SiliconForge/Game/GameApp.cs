@@ -41,6 +41,33 @@ namespace SiliconForge.Game
             ShowCampaign();
         }
 
+        void Start()
+        {
+            // "-sf-smoketest <folder>": screenshot the menu and a fully built machine, then quit.
+            var args = System.Environment.GetCommandLineArgs();
+            int i = System.Array.IndexOf(args, "-sf-smoketest");
+            if (i >= 0) StartCoroutine(SmokeTest(i + 1 < args.Length ? args[i + 1] : Application.persistentDataPath));
+        }
+
+        System.Collections.IEnumerator SmokeTest(string folder)
+        {
+            System.IO.Directory.CreateDirectory(folder);
+            yield return new WaitForSeconds(2f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(folder, "smoke_campaign.png"));
+            yield return new WaitForSeconds(1f);
+
+            screen?.Dispose();
+            screen = null;
+            Root.Clear();
+            var rig = new GameObject("Workshop").AddComponent<Workshop.WorkshopRig>();
+            rig.Build(MainCamera);
+            rig.Showcase();
+            yield return new WaitForSeconds(2.5f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(folder, "smoke_workshop.png"));
+            yield return new WaitForSeconds(1.5f);
+            Application.Quit();
+        }
+
         void Update() => screen?.Tick(Time.unscaledDeltaTime);
 
         void OnDestroy()

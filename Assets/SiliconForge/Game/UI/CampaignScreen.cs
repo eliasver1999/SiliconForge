@@ -113,7 +113,7 @@ namespace SiliconForge.Game.UI
             {
                 foot.Add(Ui.Pips(progress.stars));
                 foot.Add(Ui.Div("spacer"));
-                if (!level.workshop) foot.Add(Ui.Text($"{progress.bestGates} gates", "card__meta"));
+                if (!level.workshop) foot.Add(Ui.Text(progress.bestGates == 1 ? "1 gate" : $"{progress.bestGates} gates", "card__meta"));
             }
             else if (level.workshop)
             {

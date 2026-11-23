@@ -78,7 +78,54 @@ namespace SiliconForge.Core
             new EraSpec { numeral = "IV", name = "Memory", description = "Circuits that remember, and a clock to drive them." },
             new EraSpec { numeral = "V", name = "Processor", description = "A machine that follows instructions you write." },
             new EraSpec { numeral = "VI", name = "Computer", description = "Memory, a screen, and the heat they make." },
+            new EraSpec { numeral = "VII", name = "Interactive", description = "A button, memory reads, and a program you can play with." },
         };
+
+        /// <summary>Btn bit 0, Clk bit 1. P is 1 for exactly two clock cycles after a press is first sampled.</summary>
+        static SeqStep[] PressSequence() => Seq(1,
+            0b00, -1, 0b10, -1, 0b00, -1, 0b10, -1, 0b00, -1, 0b10, 0, 0b00, 0,   // settle with the button up
+            0b01, 0, 0b11, 1, 0b01, 1, 0b11, 1, 0b01, 1, 0b11, 0, 0b01, 0,        // press and hold: two cycles of P
+            0b11, 0, 0b01, 0, 0b00, 0, 0b10, 0, 0b00, 0, 0b10, 0, 0b00, 0,        // still held, then released
+            0b01, 0, 0b00, 0, 0b10, 0, 0b00, 0,                                   // a tap between edges is never sampled
+            0b01, 0, 0b11, 1, 0b00, 1, 0b10, 1, 0b00, 1, 0b10, 0, 0b00, 0);       // a short press still gives two cycles
+
+        public const string Cpu3TestProgram =
+            "LDI 3\nSTA 1\nLDI 0\nLDA 1\nADA 1\nJB 8\nADD 1\nJB 10\nLDI 15\nJMP 9\nSTA 2\nADA 2\nh: JMP h";
+
+        /// <summary>
+        /// Processor III's test. Inputs: N bits 0-3, Op 4-6, M 7-10 (the memory word at row N), Btn 11, Clk 12, Reset 13.
+        /// The test plays the memory itself, so M is whatever the program last stored in that row.
+        /// The button is held only while instruction 7 runs, so JB 8 falls through and JB 10 jumps.
+        /// </summary>
+        static SeqStep[] Cpu3Sequence()
+        {
+            var rom = Assembler.Assemble(Cpu3TestProgram, new List<AssemblyError>(), 3);
+            var memory = new int[4];
+            var steps = new List<SeqStep>();
+            int pc = 0, a = 0;
+            bool aKnown = false;
+            int Inputs(int word, int extra) =>
+                (word & 0x7F) | (memory[Isa.N(word) & 3] << ComputerMachine.Cpu3MemBit) | ((pc == 7 ? 1 : 0) << ComputerMachine.Cpu3BtnBit) | extra;
+            int Expected(int word) => pc | (a << 4) | ((Isa.Op(word) == Isa.Sta ? 1 : 0) << 8);
+            int Mask() => 0x10F | (aKnown ? 0xF0 : 0);
+
+            const int clk = 1 << ComputerMachine.Cpu3ClkBit, reset = 1 << ComputerMachine.Cpu3ResetBit;
+            steps.Add(new SeqStep { inputs = Inputs(rom[0], reset), mask = 0 });
+            steps.Add(new SeqStep { inputs = Inputs(rom[0], reset | clk), expected = Expected(rom[0]), mask = 0x10F });
+            steps.Add(new SeqStep { inputs = Inputs(rom[0], reset), expected = Expected(rom[0]), mask = 0x10F });
+            steps.Add(new SeqStep { inputs = Inputs(rom[0], 0), expected = Expected(rom[0]), mask = 0x10F });
+            for (int cycle = 0; cycle < 16; cycle++)
+            {
+                int word = rom[pc];
+                int rising = Inputs(word, clk);       // M and Btn as they are before the edge
+                bool button = pc == 7;
+                Isa.Execute(word, ref pc, ref a, memory, button);
+                if (Isa.Op(word) == Isa.Ldi || Isa.Op(word) == Isa.Lda) aKnown = true;
+                steps.Add(new SeqStep { inputs = rising, expected = Expected(word), mask = Mask() });
+                steps.Add(new SeqStep { inputs = Inputs(rom[pc], 0), expected = Expected(rom[pc]), mask = Mask() });
+            }
+            return steps.ToArray();
+        }
 
         /// <summary>D bits 0-3, A bits 4-5, Write bit 6, Clk bit 7. Q is the word at address A.</summary>
         static SeqStep[] RamSequence()
@@ -113,7 +160,7 @@ namespace SiliconForge.Core
         /// </summary>
         static SeqStep[] Cpu2Sequence()
         {
-            var rom = Assembler.Assemble(Cpu2TestProgram, new List<AssemblyError>(), true);
+            var rom = Assembler.Assemble(Cpu2TestProgram, new List<AssemblyError>(), 2);
             var steps = new List<SeqStep>();
             int pc = 0, a = 0;
             bool aKnown = false;
@@ -515,6 +562,37 @@ namespace SiliconForge.Core
             {
                 id = "PIXELS", era = 5, number = 26, title = "First Picture", tagline = "Draw something.",
                 brief = "Upgrade to Processor II, add a RAM stick for video memory, a cooler and a screen. Then write a program that draws the smiley shown below.\n\nThe screen shows the RAM's four rows, top to bottom. STA writes A into a row, and bit 3 is the leftmost pixel, so 9 lights both ends of a row.",
+                workshop = true, wattsPerGate = 0.125f
+            },
+            new LevelSpec
+            {
+                id = "PRESS", era = 6, number = 27, title = "Press Detector", tagline = "One press, one signal.",
+                brief = "A button stays down for many clock ticks, but a program wants to hear about each press once.\n\nP is 0 until a rising Clk edge first sees Btn at 1. Then P is 1 for exactly two clock cycles and goes back to 0, even if the button is still held. Two cycles means a program checking the button in a two-instruction loop can never miss it.",
+                hint = "Three flip-flops in a row remember the button at the last three edges. P is (the newest OR the middle one) AND NOT the oldest one, which also keeps a quick tap at two cycles.",
+                tip = "Press Space to toggle the Clk input.",
+                inputs = new[] { "Btn", "Clk" }, outputs = new[] { "P" },
+                sequence = PressSequence(),
+                parts = new[] { PartTypes.Nand, "NOT", "AND", "OR", "DFF" },
+                chipId = "PRESS", chipName = "Press Detector", par = 33, wattsPerGate = 0.125f
+            },
+            new LevelSpec
+            {
+                id = "CPU3", era = 6, number = 28, title = "Processor III", tagline = "Read, add, react.",
+                brief = "Three more instructions fill the last opcodes:\n- LDA N: A = memory row N\n- ADA N: A = A + memory row N\n- JB N: jump to N if the button input Btn is 1\n\nThe machine puts memory row N on the new M inputs, so LDA and ADA work like LDI and ADD with M in place of N. Everything from Processor II still works the same way.",
+                hint = "Pick the operand first: a Bus Selector chooses N or M using Op2. LDI and LDA load that operand, ADD and ADA load A plus it. A loads for LDI, ADD, LDA and ADA. Jump on JMP, on JZ when A is 0, and on JB when Btn is 1.",
+                tip = "The test plays a program into your processor and acts as its memory. M is shown as a number.",
+                inputs = Concat(Pins("N", 4), Pins("Op", 3), Pins("M", 4), new[] { "Btn", "Clk", "Reset" }),
+                outputs = Concat(Pins("PC", 4), Pins("A", 4), new[] { "W" }),
+                inputGroups = new[] { G("N", 0, 4), G("Op", 4, 3, Isa.OpLabels), G("M", 7, 4), G("Btn", 11), G("Clk", 12), G("Rst", 13) },
+                outputGroups = new[] { G("PC", 0, 4), G("A", 4, 4), G("W", 8) },
+                sequence = Cpu3Sequence(),
+                parts = new[] { PartTypes.Nand, "NOT", "AND", "OR", "XOR", "MUX", "MUX4", "ADD4", "ZERO", "REG4", "PC", "CPU2" },
+                chipId = "CPU3", chipName = "Processor III", par = 220, wattsPerGate = 0.125f
+            },
+            new LevelSpec
+            {
+                id = "PLAY", era = 6, number = 29, title = "Press Start", tagline = "Make it interactive.",
+                brief = "Fit Processor III, your press detector and a big arcade button. Then write a program where one light in row 0 starts at the right and moves one pixel left each time you press the button, wrapping back round. Rows 1 to 3 stay dark.\n\nIt all has to fit in 16 instructions. Hint: ADA 0 adds row 0 to A, and adding a number to itself moves every bit one place left.",
                 workshop = true, wattsPerGate = 0.125f
             },
         };
