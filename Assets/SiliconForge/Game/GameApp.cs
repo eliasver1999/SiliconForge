@@ -36,6 +36,7 @@ namespace SiliconForge.Game
             Save = SaveSystem.Load();
             RebuildCatalog();
             EnsureCamera();
+            Sfx.Init(gameObject);
             CreateUi();
             ShowCampaign();
         }
@@ -63,6 +64,7 @@ namespace SiliconForge.Game
                 MainCamera = go.AddComponent<Camera>();
                 go.AddComponent<AudioListener>();
             }
+            if (FindAnyObjectByType<AudioListener>() == null) MainCamera.gameObject.AddComponent<AudioListener>();
             MainCamera.clearFlags = CameraClearFlags.SolidColor;
             MainCamera.backgroundColor = Background;
         }

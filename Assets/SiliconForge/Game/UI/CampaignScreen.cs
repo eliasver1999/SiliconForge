@@ -57,6 +57,13 @@ namespace SiliconForge.Game.UI
             var footer = Ui.Div("campaign__footer");
             footer.Add(Ui.Text("Progress saves automatically.", "footer-note"));
             footer.Add(Ui.Div("spacer"));
+            UiButton sound = null;
+            sound = Ui.Button(Sfx.Enabled ? "Sound on" : "Sound off", () =>
+            {
+                Sfx.Enabled = !Sfx.Enabled;
+                sound.Text = Sfx.Enabled ? "Sound on" : "Sound off";
+            }, "btn--ghost", "btn--small");
+            footer.Add(sound);
             footer.Add(Ui.Button("Reset progress", ConfirmReset, "btn--ghost", "btn--small"));
             Root.Add(footer);
         }

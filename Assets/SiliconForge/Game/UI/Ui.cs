@@ -13,7 +13,12 @@ namespace SiliconForge.Game.UI
             Label = new Label(text) { pickingMode = PickingMode.Ignore };
             Label.AddToClassList("btn__label");
             Add(Label);
-            this.AddManipulator(new Clickable(() => { if (enabledSelf) onClick?.Invoke(); }));
+            this.AddManipulator(new Clickable(() =>
+            {
+                if (!enabledSelf) return;
+                Sfx.Play(SfxId.Click);
+                onClick?.Invoke();
+            }));
         }
 
         public string Text { get => Label.text; set => Label.text = value; }

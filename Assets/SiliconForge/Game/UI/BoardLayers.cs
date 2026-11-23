@@ -67,6 +67,7 @@ namespace SiliconForge.Game.UI
         static readonly Color Pulse = new Color32(0xFF, 0xE6, 0xB8, 0xFF);
         static readonly Color Glow = new Color(1f, 0.71f, 0.28f, 0.16f);
         static readonly Color SelectHalo = new Color(1f, 1f, 1f, 0.16f);
+        static readonly Color HoverHalo = new Color(1f, 1f, 1f, 0.07f);
         static readonly Color Preview = new Color(1f, 0.71f, 0.28f, 0.85f);
 
         readonly CircuitView view;
@@ -114,6 +115,7 @@ namespace SiliconForge.Game.UI
                 bool on = view.WireValue(w);
 
                 if (w == view.SelectedWire) Stroke(p, a, c1, c2, b, SelectHalo, 11f);
+                else if (w == view.HoverWire) Stroke(p, a, c1, c2, b, HoverHalo, 9f);
                 if (on) Stroke(p, a, c1, c2, b, Glow, 8f);
                 Stroke(p, a, c1, c2, b, on ? WireOn : WireOff, 3f);
 

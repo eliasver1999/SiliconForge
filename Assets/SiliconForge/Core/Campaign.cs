@@ -198,7 +198,7 @@ namespace SiliconForge.Core
                 id = "AND", era = 0, number = 2, title = "AND Gate", tagline = "Both, or nothing.",
                 brief = "Out is 1 only when A and B are both 1.\n\nYour inverter is now in the parts list. Use it.",
                 hint = "NAND literally means NOT-AND. Undo the NOT.",
-                tip = "Right-click a part or wire to delete it. Scroll to zoom, drag the empty board to pan.",
+                tip = "Right-click a part or wire to delete it. Scroll to zoom, right-drag to pan, and drag across empty board to select several parts.",
                 inputs = new[] { "A", "B" }, outputs = new[] { "Out" },
                 truth = x => x == 3 ? 1 : 0,
                 parts = new[] { PartTypes.Nand, "NOT" },

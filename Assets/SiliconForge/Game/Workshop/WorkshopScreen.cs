@@ -235,6 +235,7 @@ namespace SiliconForge.Game.Workshop
                 clk = !clk;
                 drive(clk);
                 if (clk && resetPending) resetPending = false;
+                if (clk) Sfx.Play(SfxId.Tick);
                 rig.SetClockLed(clk);
             }
         }
@@ -264,6 +265,7 @@ namespace SiliconForge.Game.Workshop
             int bits = (a | (b << 4)) ^ (1 << bit);
             a = bits & 15;
             b = (bits >> 4) & 15;
+            Sfx.Play(SfxId.Toggle);
             UpdateInputs();
         }
 
@@ -361,6 +363,7 @@ namespace SiliconForge.Game.Workshop
             else
             {
                 SetStatus($"The machine runs, but the program isn't there yet. {reason} Edit the program and flash it again.", true);
+                Sfx.Play(SfxId.Fail);
                 Refresh();
             }
         }
@@ -371,7 +374,7 @@ namespace SiliconForge.Game.Workshop
             current = steps.Count;
             app.RecordSolve(level, TotalGates, StarsFor(psuInstalled), null);
             Refresh();
-            if (first) app.Root.schedule.Execute(ShowSuccess).ExecuteLater(1600);
+            if (first) app.Root.schedule.Execute(() => { Sfx.Play(SfxId.Success); ShowSuccess(); }).ExecuteLater(1600);
         }
 
         int SmallestSufficientPsu()

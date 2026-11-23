@@ -69,6 +69,7 @@ namespace SiliconForge.Game.UI
 
             circuit = LoadOrCreateCircuit();
             snapshot = JsonUtility.ToJson(circuit);
+            view.AllowedTypes = new HashSet<string>(level.parts);
             view.SetCircuit(circuit);
             view.Edited += OnEdited;
             view.InputToggled += i => { inputs[i] = !inputs[i]; };
@@ -235,10 +236,12 @@ namespace SiliconForge.Game.UI
             if (report.AllPassed)
             {
                 banner.Hidden(true);
+                Sfx.Play(SfxId.Success);
                 OnCertified();
                 return;
             }
 
+            Sfx.Play(SfxId.Fail);
             banner.Hidden(false);
             if (report.unstable)
                 bannerText.text = "Your circuit never settles: a loop of gates keeps flipping. Break the loop and run the tests again.";
@@ -289,6 +292,11 @@ namespace SiliconForge.Game.UI
             if (e.keyCode == KeyCode.Delete || e.keyCode == KeyCode.Backspace) view.DeleteSelection();
             else if (e.actionKey && e.keyCode == KeyCode.Z) { if (e.shiftKey) Redo(); else Undo(); }
             else if (e.actionKey && e.keyCode == KeyCode.Y) Redo();
+            else if (e.actionKey && e.keyCode == KeyCode.C) view.Copy();
+            else if (e.actionKey && e.keyCode == KeyCode.V) view.Paste();
+            else if (e.actionKey && e.keyCode == KeyCode.D) view.Duplicate();
+            else if (e.actionKey && e.keyCode == KeyCode.A) view.SelectAll();
+            else if (e.keyCode == KeyCode.Escape) view.ClearSelection();
             else if (e.keyCode == KeyCode.F) view.Fit();
             else if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) RunTests();
             else if (e.keyCode == KeyCode.Space && ToggleClock()) { }
@@ -359,8 +367,10 @@ namespace SiliconForge.Game.UI
             var help = Ui.Div("palette__help");
             help.Add(HelpLine("Drag", "a part onto the board"));
             help.Add(HelpLine("Drag a pin", "to draw a wire"));
+            help.Add(HelpLine("Drag empty space", "to select"));
+            help.Add(HelpLine("Right-drag", "to pan"));
             help.Add(HelpLine("Right-click", "to delete"));
-            help.Add(HelpLine("Scroll", "to zoom, drag to pan"));
+            help.Add(HelpLine("Ctrl+C / V", "copy and paste"));
             help.Add(HelpLine("Enter", "to run the tests"));
             if (System.Array.IndexOf(level.inputs, "Clk") >= 0) help.Add(HelpLine("Space", "to toggle Clk"));
             palette.Add(help);

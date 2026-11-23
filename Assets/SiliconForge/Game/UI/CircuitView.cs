@@ -7,7 +7,8 @@ using UnityEngine.UIElements;
 namespace SiliconForge.Game.UI
 {
     /// <summary>
-    /// The interactive board: pan, zoom, place, move, wire and delete parts.
+    /// The interactive board. Left-drag on empty space draws a selection box, right- or middle-drag pans,
+    /// the wheel zooms. Parts can be moved as a group, copied and pasted. Pins show a tooltip with their name and value.
     /// It edits a CircuitData in place and raises Edited after every change.
     /// </summary>
     public sealed class CircuitView : VisualElement
@@ -16,14 +17,30 @@ namespace SiliconForge.Game.UI
         public event Action<int> InputToggled;
         public event Action<string> Message;
 
-        enum Mode { None, Pan, MovePart, Wire, Toggle }
+        enum Mode { None, Pan, MoveParts, Wire, Toggle, Box }
+
+        /// <summary>Parts and the wires between them, kept between contracts so designs can be carried over.</summary>
+        sealed class Clip
+        {
+            public readonly List<PartData> parts = new List<PartData>();
+            public readonly List<WireData> wires = new List<WireData>();
+        }
+
+        static Clip clipboard;
 
         readonly PartCatalog catalog;
         readonly GridLayer grid;
         readonly VisualElement content;
         readonly WireLayer wireLayer;
+        readonly VisualElement selectionBox;
+        readonly VisualElement tooltip;
+        readonly Label tooltipName, tooltipValue;
         readonly Dictionary<int, PartElement> elements = new Dictionary<int, PartElement>();
         readonly Dictionary<long, WireData> drivers = new Dictionary<long, WireData>();
+        readonly HashSet<int> selected = new HashSet<int>();
+
+        /// <summary>Part types this contract allows. Pasting skips anything else.</summary>
+        public HashSet<string> AllowedTypes;
 
         public CircuitData Circuit { get; private set; }
         public Netlist Netlist { get; private set; }
@@ -31,7 +48,8 @@ namespace SiliconForge.Game.UI
         public Vector2 Pan { get; private set; }
         public float Zoom { get; private set; } = 1f;
         public WireData SelectedWire { get; private set; }
-        public int SelectedPart { get; private set; } = -1;
+        public WireData HoverWire { get; private set; }
+        public int SelectionCount => selected.Count;
 
         Mode mode;
         int pointerId = -1;
@@ -39,12 +57,17 @@ namespace SiliconForge.Game.UI
         Vector2 downLocal, lastLocal;
         bool moved;
         PartElement dragPart;
-        Vector2 dragOffset, dragStart;
+        Vector2 dragBoardStart;
+        readonly Dictionary<int, Vector2> dragStarts = new Dictionary<int, Vector2>();
         PinRef wireFrom;
         Vector2 wireCursor;
-        PinElement hoverPin;
+        PinElement hoverPin, tooltipPin;
         object rightClickTarget;
+        bool boxAdditive;
+        readonly HashSet<int> boxBase = new HashSet<int>();
         bool fitPending = true;
+        bool hovering;
+        Vector2 hoverLocal;
 
         public CircuitView(PartCatalog catalog)
         {
@@ -62,9 +85,24 @@ namespace SiliconForge.Game.UI
             wireLayer = new WireLayer(this);
             content.Add(wireLayer);
 
+            selectionBox = new VisualElement { pickingMode = PickingMode.Ignore };
+            selectionBox.AddToClassList("selection-box");
+            Add(selectionBox);
+
+            tooltip = new VisualElement { pickingMode = PickingMode.Ignore };
+            tooltip.AddToClassList("pin-tip");
+            tooltipName = new Label { pickingMode = PickingMode.Ignore };
+            tooltipName.AddToClassList("pin-tip__name");
+            tooltipValue = new Label { pickingMode = PickingMode.Ignore };
+            tooltipValue.AddToClassList("pin-tip__value");
+            tooltip.Add(tooltipName);
+            tooltip.Add(tooltipValue);
+            Add(tooltip);
+
             RegisterCallback<PointerDownEvent>(OnPointerDown);
             RegisterCallback<PointerMoveEvent>(OnPointerMove);
             RegisterCallback<PointerUpEvent>(OnPointerUp);
+            RegisterCallback<PointerLeaveEvent>(_ => OnLeave());
             RegisterCallback<PointerCaptureOutEvent>(_ => EndInteraction());
             RegisterCallback<WheelEvent>(OnWheel);
             RegisterCallback<GeometryChangedEvent>(OnGeometryChanged);
@@ -78,8 +116,10 @@ namespace SiliconForge.Game.UI
             Circuit = circuit;
             foreach (var e in elements.Values) e.RemoveFromHierarchy();
             elements.Clear();
+            selected.Clear();
             SelectedWire = null;
-            SelectedPart = -1;
+            HoverWire = null;
+            HideTooltip();
             foreach (var p in circuit.parts) CreateElement(p);
             RebuildDrivers();
             wireLayer.MarkDirtyRepaint();
@@ -91,11 +131,12 @@ namespace SiliconForge.Game.UI
             State = state;
         }
 
-        void CreateElement(PartData p)
+        PartElement CreateElement(PartData p)
         {
             var el = new PartElement(p, catalog.Get(p.type));
             elements[p.id] = el;
             content.Add(el);
+            return el;
         }
 
         void RebuildDrivers()
@@ -114,6 +155,7 @@ namespace SiliconForge.Game.UI
         public void RefreshSignals()
         {
             foreach (var e in elements.Values) e.Refresh(this);
+            if (tooltipPin != null) UpdateTooltipValue();
             wireLayer.MarkDirtyRepaint();
         }
 
@@ -163,7 +205,8 @@ namespace SiliconForge.Game.UI
             var pos = Snap(boardCenter - size * 0.5f);
             var part = Circuit.AddPart(type, pos.x, pos.y);
             CreateElement(part);
-            Select(part.id);
+            SelectOnly(part.id);
+            Sfx.Play(SfxId.Place);
             NotifyEdited();
         }
 
@@ -173,42 +216,135 @@ namespace SiliconForge.Game.UI
             {
                 Circuit.wires.Remove(SelectedWire);
                 SelectedWire = null;
+                Sfx.Play(SfxId.Delete);
                 NotifyEdited();
+                return;
             }
-            else if (SelectedPart >= 0)
-            {
-                DeletePart(SelectedPart);
-            }
+            if (selected.Count == 0) return;
+            DeleteParts(new List<int>(selected));
         }
 
-        void DeletePart(int id)
+        void DeleteParts(List<int> ids)
         {
-            var part = Circuit.Find(id);
-            if (part == null) return;
-            if (PartTypes.IsIo(part.type))
+            int removed = 0;
+            foreach (var id in ids)
+            {
+                var part = Circuit.Find(id);
+                if (part == null || PartTypes.IsIo(part.type)) continue;
+                Circuit.RemovePart(id);
+                if (elements.TryGetValue(id, out var el)) { el.RemoveFromHierarchy(); elements.Remove(id); }
+                selected.Remove(id);
+                removed++;
+            }
+            if (removed == 0)
             {
                 Message?.Invoke("Inputs and outputs belong to the contract and can't be removed.");
                 return;
             }
-            Circuit.RemovePart(id);
-            if (elements.TryGetValue(id, out var el)) { el.RemoveFromHierarchy(); elements.Remove(id); }
-            if (SelectedPart == id) SelectedPart = -1;
+            Sfx.Play(SfxId.Delete);
             NotifyEdited();
         }
 
-        void Select(int partId)
+        public void SelectAll()
         {
-            if (SelectedPart >= 0 && elements.TryGetValue(SelectedPart, out var old)) old.SetSelected(false);
-            SelectedPart = partId;
-            if (partId >= 0 && elements.TryGetValue(partId, out var el)) el.SetSelected(true);
-            if (partId >= 0) SelectedWire = null;
-            wireLayer.MarkDirtyRepaint();
+            selected.Clear();
+            foreach (var el in elements.Values)
+                if (!PartTypes.IsIo(el.Data.type)) selected.Add(el.Data.id);
+            SelectedWire = null;
+            ApplySelection();
+        }
+
+        public void ClearSelection()
+        {
+            selected.Clear();
+            SelectedWire = null;
+            ApplySelection();
+        }
+
+        /// <summary>Copies the selected parts and the wires between them.</summary>
+        public bool Copy()
+        {
+            if (selected.Count == 0) return false;
+            var clip = new Clip();
+            foreach (var id in selected)
+            {
+                var part = Circuit.Find(id);
+                if (part != null && !PartTypes.IsIo(part.type)) clip.parts.Add(part.Clone());
+            }
+            foreach (var w in Circuit.wires)
+                if (selected.Contains(w.fromPart) && selected.Contains(w.toPart)) clip.wires.Add(w.Clone());
+            if (clip.parts.Count == 0) return false;
+            clipboard = clip;
+            Message?.Invoke(clip.parts.Count == 1 ? "Copied 1 part." : $"Copied {clip.parts.Count} parts.");
+            return true;
+        }
+
+        /// <summary>Pastes at the cursor when it's over the board, otherwise just below and right of the originals.</summary>
+        public void Paste(bool atCursor = true)
+        {
+            if (clipboard == null || clipboard.parts.Count == 0) { Message?.Invoke("Nothing to paste yet. Select parts and press Ctrl+C."); return; }
+
+            var min = new Vector2(float.MaxValue, float.MaxValue);
+            foreach (var p in clipboard.parts) min = Vector2.Min(min, new Vector2(p.x, p.y));
+            var offset = atCursor && hovering
+                ? Snap(ToBoard(hoverLocal) - min)
+                : new Vector2(PartLayout.Grid * 4, PartLayout.Grid * 4);
+
+            var map = new Dictionary<int, int>();
+            int skipped = 0;
+            selected.Clear();
+            SelectedWire = null;
+            foreach (var p in clipboard.parts)
+            {
+                if (!catalog.Has(p.type) || (AllowedTypes != null && !AllowedTypes.Contains(p.type))) { skipped++; continue; }
+                var copy = Circuit.AddPart(p.type, p.x + offset.x, p.y + offset.y);
+                map[p.id] = copy.id;
+                CreateElement(copy);
+                selected.Add(copy.id);
+            }
+            foreach (var w in clipboard.wires)
+                if (map.TryGetValue(w.fromPart, out var from) && map.TryGetValue(w.toPart, out var to))
+                    Circuit.Connect(from, w.fromPin, to, w.toPin);
+
+            ApplySelection();
+            if (map.Count > 0)
+            {
+                Sfx.Play(SfxId.Place);
+                NotifyEdited();
+            }
+            if (skipped > 0) Message?.Invoke(skipped == 1 ? "1 part isn't available in this contract and was left out." : $"{skipped} parts aren't available in this contract and were left out.");
+        }
+
+        public void Duplicate()
+        {
+            if (Copy()) Paste(false);
+        }
+
+        void SelectOnly(int partId)
+        {
+            selected.Clear();
+            selected.Add(partId);
+            SelectedWire = null;
+            ApplySelection();
+        }
+
+        void ToggleSelected(int partId)
+        {
+            if (!selected.Remove(partId)) selected.Add(partId);
+            SelectedWire = null;
+            ApplySelection();
         }
 
         void SelectWire(WireData w)
         {
-            Select(-1);
+            selected.Clear();
             SelectedWire = w;
+            ApplySelection();
+        }
+
+        void ApplySelection()
+        {
+            foreach (var el in elements.Values) el.SetSelected(selected.Contains(el.Data.id));
             wireLayer.MarkDirtyRepaint();
         }
 
@@ -298,6 +434,7 @@ namespace SiliconForge.Game.UI
         {
             if (pointerId != -1) return;
             Focus();
+            HideTooltip();
             var local = this.WorldToLocal(e.position);
             downLocal = lastLocal = local;
             moved = false;
@@ -321,35 +458,42 @@ namespace SiliconForge.Game.UI
                 mode = Mode.Wire;
                 wireFrom = hit.pin.Ref;
                 wireCursor = ToBoard(local);
+                BeginWiring(hit.pin);
                 Capture(e.pointerId);
             }
-            else if (hit.part != null)
+            else if (hit.part != null && hit.part.Data.type == PartTypes.Input)
             {
-                var data = hit.part.Data;
-                if (data.type == PartTypes.Input)
+                mode = Mode.Toggle;
+                dragPart = hit.part;
+                Capture(e.pointerId);
+            }
+            else if (hit.part != null && hit.part.Data.type != PartTypes.Output)
+            {
+                int id = hit.part.Data.id;
+                if (e.shiftKey)
                 {
-                    mode = Mode.Toggle;
-                    dragPart = hit.part;
-                }
-                else if (data.type == PartTypes.Output)
-                {
-                    Select(-1);
-                    mode = Mode.Pan;
+                    ToggleSelected(id);
+                    mode = Mode.None;
                 }
                 else
                 {
-                    Select(data.id);
-                    mode = Mode.MovePart;
-                    dragPart = hit.part;
-                    dragStart = new Vector2(data.x, data.y);
-                    dragOffset = ToBoard(local) - dragStart;
-                    hit.part.BringToFront();
+                    if (!selected.Contains(id)) SelectOnly(id);
+                    SelectedWire = null;
+                    mode = Mode.MoveParts;
+                    dragBoardStart = ToBoard(local);
+                    dragStarts.Clear();
+                    foreach (var sid in selected)
+                        if (elements.TryGetValue(sid, out var el))
+                        {
+                            dragStarts[sid] = new Vector2(el.Data.x, el.Data.y);
+                            el.BringToFront();
+                        }
+                    Capture(e.pointerId);
                 }
-                Capture(e.pointerId);
             }
             else
             {
-                var wire = HitWire(ToBoard(local));
+                var wire = hit.part == null && !e.shiftKey ? HitWire(ToBoard(local)) : null;
                 if (wire != null)
                 {
                     SelectWire(wire);
@@ -357,9 +501,11 @@ namespace SiliconForge.Game.UI
                 }
                 else
                 {
-                    Select(-1);
-                    SelectedWire = null;
-                    mode = Mode.Pan;
+                    boxAdditive = e.shiftKey;
+                    boxBase.Clear();
+                    if (boxAdditive) boxBase.UnionWith(selected);
+                    else ClearSelection();
+                    mode = Mode.Box;
                     Capture(e.pointerId);
                 }
             }
@@ -368,8 +514,15 @@ namespace SiliconForge.Game.UI
 
         void OnPointerMove(PointerMoveEvent e)
         {
-            if (pointerId == -1 || e.pointerId != pointerId) return;
             var local = this.WorldToLocal(e.position);
+            hovering = true;
+            hoverLocal = local;
+
+            if (pointerId == -1 || e.pointerId != pointerId)
+            {
+                UpdateHover(e.target as VisualElement, local);
+                return;
+            }
             if (!moved && (local - downLocal).sqrMagnitude > 16f) moved = true;
 
             switch (mode)
@@ -379,17 +532,19 @@ namespace SiliconForge.Game.UI
                     ApplyTransform();
                     break;
 
-                case Mode.MovePart:
+                case Mode.MoveParts:
                     if (moved)
                     {
-                        var pos = Snap(ToBoard(local) - dragOffset);
-                        if (pos.x != dragPart.Data.x || pos.y != dragPart.Data.y)
+                        var delta = Snap(ToBoard(local) - dragBoardStart);
+                        foreach (var kv in dragStarts)
                         {
-                            dragPart.Data.x = pos.x;
-                            dragPart.Data.y = pos.y;
-                            dragPart.SetPosition(pos);
-                            wireLayer.MarkDirtyRepaint();
+                            if (!elements.TryGetValue(kv.Key, out var el)) continue;
+                            var pos = kv.Value + delta;
+                            el.Data.x = pos.x;
+                            el.Data.y = pos.y;
+                            el.SetPosition(pos);
                         }
+                        wireLayer.MarkDirtyRepaint();
                     }
                     break;
 
@@ -397,6 +552,10 @@ namespace SiliconForge.Game.UI
                     wireCursor = ToBoard(local);
                     SetHoverPin(FindTargetPin(e.position));
                     wireLayer.MarkDirtyRepaint();
+                    break;
+
+                case Mode.Box:
+                    if (moved) UpdateBox(local);
                     break;
             }
             lastLocal = local;
@@ -414,19 +573,23 @@ namespace SiliconForge.Game.UI
                 case Mode.Pan:
                     if (downButton == 1 && !moved && rightClickTarget != null)
                     {
-                        if (rightClickTarget is PartElement part) DeletePart(part.Data.id);
+                        if (rightClickTarget is PartElement part) DeleteParts(new List<int> { part.Data.id });
                         else if (rightClickTarget is WireData wire)
                         {
                             Circuit.wires.Remove(wire);
                             if (SelectedWire == wire) SelectedWire = null;
+                            if (HoverWire == wire) HoverWire = null;
+                            Sfx.Play(SfxId.Delete);
                             NotifyEdited();
                         }
                     }
                     break;
 
-                case Mode.MovePart:
-                    if (dragPart != null && (dragPart.Data.x != dragStart.x || dragPart.Data.y != dragStart.y))
-                        NotifyEdited();
+                case Mode.MoveParts:
+                    bool changed = false;
+                    foreach (var kv in dragStarts)
+                        if (elements.TryGetValue(kv.Key, out var el) && (el.Data.x != kv.Value.x || el.Data.y != kv.Value.y)) changed = true;
+                    if (changed) NotifyEdited();
                     break;
 
                 case Mode.Wire:
@@ -434,7 +597,11 @@ namespace SiliconForge.Game.UI
                     break;
 
                 case Mode.Toggle:
-                    if (!moved && dragPart != null) InputToggled?.Invoke(dragPart.Data.index);
+                    if (!moved && dragPart != null)
+                    {
+                        Sfx.Play(SfxId.Toggle);
+                        InputToggled?.Invoke(dragPart.Data.index);
+                    }
                     break;
             }
             EndInteraction();
@@ -446,8 +613,18 @@ namespace SiliconForge.Game.UI
             mode = Mode.None;
             dragPart = null;
             rightClickTarget = null;
+            dragStarts.Clear();
+            selectionBox.style.display = DisplayStyle.None;
             SetHoverPin(null);
+            EndWiring();
             wireLayer.MarkDirtyRepaint();
+        }
+
+        void OnLeave()
+        {
+            hovering = false;
+            HideTooltip();
+            if (HoverWire != null) { HoverWire = null; wireLayer.MarkDirtyRepaint(); }
         }
 
         void OnWheel(WheelEvent e)
@@ -455,7 +632,56 @@ namespace SiliconForge.Game.UI
             var local = this.WorldToLocal(e.mousePosition);
             float factor = e.delta.y > 0 ? 1f / 1.12f : 1.12f;
             ZoomAround(local, Zoom * factor);
+            HideTooltip();
             e.StopPropagation();
+        }
+
+        // ------------------------------------------------------------------ box selection
+
+        void UpdateBox(Vector2 local)
+        {
+            var min = Vector2.Min(downLocal, local);
+            var max = Vector2.Max(downLocal, local);
+            selectionBox.style.display = DisplayStyle.Flex;
+            selectionBox.style.left = min.x;
+            selectionBox.style.top = min.y;
+            selectionBox.style.width = max.x - min.x;
+            selectionBox.style.height = max.y - min.y;
+
+            var bMin = ToBoard(min);
+            var bMax = ToBoard(max);
+            var box = Rect.MinMaxRect(bMin.x, bMin.y, bMax.x, bMax.y);
+            selected.Clear();
+            selected.UnionWith(boxBase);
+            foreach (var el in elements.Values)
+            {
+                if (PartTypes.IsIo(el.Data.type)) continue;
+                var rect = new Rect(new Vector2(el.Data.x, el.Data.y), PartLayout.Size(el.Data.type, el.Info));
+                if (box.Overlaps(rect)) selected.Add(el.Data.id);
+            }
+            ApplySelection();
+        }
+
+        // ------------------------------------------------------------------ wiring
+
+        void BeginWiring(PinElement origin)
+        {
+            AddToClassList("circuit-view--wiring");
+            origin.AddToClassList("pin--origin");
+            foreach (var el in elements.Values)
+                foreach (var pin in wireFrom.isOutput ? el.Inputs : el.Outputs)
+                    pin.AddToClassList("pin--candidate");
+        }
+
+        void EndWiring()
+        {
+            if (!ClassListContains("circuit-view--wiring")) return;
+            RemoveFromClassList("circuit-view--wiring");
+            foreach (var el in elements.Values)
+            {
+                foreach (var pin in el.Inputs) { pin.RemoveFromClassList("pin--candidate"); pin.RemoveFromClassList("pin--origin"); }
+                foreach (var pin in el.Outputs) { pin.RemoveFromClassList("pin--candidate"); pin.RemoveFromClassList("pin--origin"); }
+            }
         }
 
         void CompleteWire(PinRef target)
@@ -469,6 +695,7 @@ namespace SiliconForge.Game.UI
             var output = wireFrom.isOutput ? wireFrom : target;
             var input = wireFrom.isOutput ? target : wireFrom;
             Circuit.Connect(output.part, output.pin, input.part, input.pin);
+            Sfx.Play(SfxId.Wire);
             NotifyEdited();
         }
 
@@ -531,6 +758,54 @@ namespace SiliconForge.Game.UI
             var ab = b - a;
             float t = ab.sqrMagnitude < 1e-6f ? 0f : Mathf.Clamp01(Vector2.Dot(p - a, ab) / ab.sqrMagnitude);
             return Vector2.Distance(p, a + ab * t);
+        }
+
+        // ------------------------------------------------------------------ hover: tooltips and wire highlight
+
+        void UpdateHover(VisualElement target, Vector2 local)
+        {
+            var hit = Classify(target);
+            if (hit.pin != null) ShowTooltip(hit.pin, local);
+            else HideTooltip();
+
+            var wire = hit.part == null ? HitWire(ToBoard(local)) : null;
+            if (wire != HoverWire)
+            {
+                HoverWire = wire;
+                wireLayer.MarkDirtyRepaint();
+            }
+        }
+
+        void ShowTooltip(PinElement pin, Vector2 local)
+        {
+            tooltipPin = pin;
+            tooltipName.text = PinName(pin.Ref);
+            UpdateTooltipValue();
+            tooltip.style.display = DisplayStyle.Flex;
+            tooltip.style.left = local.x + 16;
+            tooltip.style.top = local.y - 36;
+        }
+
+        void UpdateTooltipValue()
+        {
+            bool on = PinValue(tooltipPin.Ref);
+            tooltipValue.text = on ? "1" : "0";
+            tooltipValue.EnableInClassList("pin-tip__value--on", on);
+        }
+
+        void HideTooltip()
+        {
+            tooltipPin = null;
+            tooltip.style.display = DisplayStyle.None;
+        }
+
+        string PinName(PinRef r)
+        {
+            if (!elements.TryGetValue(r.part, out var el)) return "";
+            if (PartTypes.IsIo(el.Data.type)) return el.Data.label;
+            var names = r.isOutput ? el.Info.OutputNames : el.Info.InputNames;
+            string pin = r.pin < names.Length ? names[r.pin] : r.pin.ToString();
+            return $"{el.Info.Name}  ·  {pin}";
         }
     }
 }

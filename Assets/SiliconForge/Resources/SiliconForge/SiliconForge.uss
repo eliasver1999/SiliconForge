@@ -403,6 +403,35 @@
 .pin--on { background-color: var(--accent); border-color: var(--accent); }
 .pin--target { scale: 1.45 1.45; border-color: var(--ok); }
 
+/* While a wire is being drawn, only pins it can connect to stay bright. */
+.circuit-view--wiring .pin { opacity: 0.25; }
+.circuit-view--wiring .pin--candidate { opacity: 1; border-color: #8FA3BF; }
+.circuit-view--wiring .pin--origin { opacity: 1; border-color: var(--accent); }
+.circuit-view--wiring .pin--target { border-color: var(--ok); }
+
+.selection-box {
+    position: absolute;
+    display: none;
+    border-width: 1px;
+    border-color: #FFB547;
+    background-color: rgba(255, 181, 71, 0.008);
+}
+
+.pin-tip {
+    position: absolute;
+    display: none;
+    flex-direction: row;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: 6px;
+    background-color: #222A35;
+    border-width: 1px;
+    border-color: #323D4C;
+}
+.screen .pin-tip__name { font-size: 12px; color: var(--text-2); }
+.screen .pin-tip__value { font-size: 12px; -unity-font-style: bold; margin-left: 10px; color: var(--text-3); }
+.screen .pin-tip__value--on { color: var(--accent); }
+
 /* ---------- Brief panel ---------- */
 .brief {
     width: 404px;

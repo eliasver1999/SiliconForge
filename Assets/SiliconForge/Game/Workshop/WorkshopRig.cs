@@ -84,6 +84,7 @@ namespace SiliconForge.Game.Workshop
 
         void OnDestroy()
         {
+            Sfx.StopHum();
             RenderSettings.ambientMode = savedAmbientMode;
             RenderSettings.ambientSkyColor = savedSky;
             RenderSettings.ambientEquatorColor = savedEquator;
@@ -372,6 +373,7 @@ namespace SiliconForge.Game.Workshop
         {
             var home = go.transform.localPosition;
             const float duration = 0.45f;
+            Sfx.Play(SfxId.Delete, 0.7f);
             for (float t = 0; t < duration; t += Time.deltaTime)
             {
                 float u = t / duration;
@@ -451,11 +453,14 @@ namespace SiliconForge.Game.Workshop
             go.transform.localPosition = target + Vector3.up * height;
             go.SetActive(true);
             const float duration = 0.6f;
+            bool landed = false;
             for (float t = 0; t < duration; t += Time.deltaTime)
             {
                 float u = t / duration;
                 float eased = 1f + 2.2f * Mathf.Pow(u - 1f, 3) + 1.2f * Mathf.Pow(u - 1f, 2); // ease-out with a soft settle
                 go.transform.localPosition = Vector3.LerpUnclamped(target + Vector3.up * height, target, eased);
+                // The thunk plays when the part first touches down.
+                if (!landed && eased >= 0.97f) { landed = true; Sfx.Play(SfxId.Drop); }
                 yield return null;
             }
             go.transform.localPosition = target;
@@ -468,6 +473,7 @@ namespace SiliconForge.Game.Workshop
             if (!enoughPower)
             {
                 // Brownout: everything flickers, the fan twitches, then it all dies.
+                Sfx.Play(SfxId.Brownout);
                 for (int i = 0; i < 4; i++)
                 {
                     SetPowerLights(true, 0.6f);
@@ -486,6 +492,7 @@ namespace SiliconForge.Game.Workshop
             }
 
             powered = true;
+            Sfx.Play(SfxId.PowerOn);
             SetPowerLights(true, 1f);
             fanTarget = 1100f;
             testPattern = 8;
@@ -497,6 +504,7 @@ namespace SiliconForge.Game.Workshop
             }
             testPattern = -1;
             ApplyOutputs();
+            if (powered) Sfx.StartHum();
             done?.Invoke();
         }
 
@@ -504,6 +512,7 @@ namespace SiliconForge.Game.Workshop
         {
             powered = false;
             fanTarget = 0f;
+            Sfx.StopHum();
             SetPowerLights(false, 0f);
             SetClockLed(false);
             displayGlow.intensity = 0f;
