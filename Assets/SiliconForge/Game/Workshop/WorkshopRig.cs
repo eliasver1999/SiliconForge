@@ -64,6 +64,7 @@ namespace SiliconForge.Game.Workshop
         float yawTarget, pitchTarget, distanceTarget;
         Vector3 focus = new Vector3(0.02f, 0.14f, 0f);
 
+        bool changedRenderSettings;
         AmbientMode savedAmbientMode;
         Color savedSky, savedEquator, savedGround;
         bool savedFog;
@@ -107,12 +108,15 @@ namespace SiliconForge.Game.Workshop
         void OnDestroy()
         {
             Sfx.StopHum();
-            RenderSettings.ambientMode = savedAmbientMode;
-            RenderSettings.ambientSkyColor = savedSky;
-            RenderSettings.ambientEquatorColor = savedEquator;
-            RenderSettings.ambientGroundColor = savedGround;
-            RenderSettings.fog = savedFog;
-            foreach (var go in spawned) if (go != null) Destroy(go);
+            if (changedRenderSettings)
+            {
+                RenderSettings.ambientMode = savedAmbientMode;
+                RenderSettings.ambientSkyColor = savedSky;
+                RenderSettings.ambientEquatorColor = savedEquator;
+                RenderSettings.ambientGroundColor = savedGround;
+                RenderSettings.fog = savedFog;
+            }
+            foreach (var go in spawned) if (go != null) Kill(go);
             if (cam != null)
             {
                 cam.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
@@ -124,6 +128,14 @@ namespace SiliconForge.Game.Workshop
 
         void SetupCameraAndLighting()
         {
+            // An editor preview has no camera and must not touch the scene's saved lighting settings.
+            if (cam != null) SetupGameView();
+            BuildLightsAndVolume();
+        }
+
+        void SetupGameView()
+        {
+            changedRenderSettings = true;
             savedAmbientMode = RenderSettings.ambientMode;
             savedSky = RenderSettings.ambientSkyColor;
             savedEquator = RenderSettings.ambientEquatorColor;
@@ -148,7 +160,10 @@ namespace SiliconForge.Game.Workshop
                 camData.renderPostProcessing = true;
                 camData.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
             }
+        }
 
+        void BuildLightsAndVolume()
+        {
             var profile = ScriptableObject.CreateInstance<VolumeProfile>();
             var bloom = profile.Add<Bloom>(true);
             bloom.threshold.Override(0.95f);
@@ -415,7 +430,7 @@ namespace SiliconForge.Game.Workshop
             {
                 var pos = new Vector3(-0.135f + c * 0.09f, 0.512f - r * 0.075f, -0.001f);
                 var px = Box(t, $"Pixel {r}{c}", pos, new Vector3(0.074f, 0.062f, 0.003f), Mat(new Color(0.07f, 0.055f, 0.04f), 0.6f, 0f, true));
-                Destroy(px.GetComponent<Collider>());
+                Kill(px.GetComponent<Collider>());
                 pixels[r * 4 + c] = px.GetComponent<Renderer>();
             }
 
@@ -506,7 +521,7 @@ namespace SiliconForge.Game.Workshop
         void SetChipLabel(GameObject chip, string name, string text, float height, float size)
         {
             var old = chip.transform.Find(name);
-            if (old != null) { old.name = "Old Label"; Destroy(old.gameObject); }
+            if (old != null) { old.name = "Old Label"; Kill(old.gameObject); }
             var label = AddLabel(chip.transform, text, new Vector3(0, height, 0), Quaternion.Euler(90, 0, 0), size, new Color(0.88f, 0.9f, 0.93f));
             label.name = name;
         }
@@ -595,10 +610,13 @@ namespace SiliconForge.Game.Workshop
             clockRoot.SetActive(true);
             ramRoot.SetActive(true);
             monitorRoot.SetActive(true);
-            InstallChip("CPU-II\n190 G", false);
+            InstallChip("CPU-III\n220 G", false);
             InstallCounter("ROM\n16x6", false);
             InstallPsu(100, false);
             fanCoolerRoot.SetActive(true);
+            SetChipLabel(pressRoot, "Press Label", "BTN", 0.073f, 0.0016f);
+            pressRoot.SetActive(true);
+            arcadeRoot.SetActive(true);
             powered = true;
             SetPowerLights(true, 1f);
             fanTarget = 1100f;
@@ -618,7 +636,7 @@ namespace SiliconForge.Game.Workshop
         public void InstallPsu(int watts, bool animate = true)
         {
             var old = psuRoot.transform.Find("Watt Label");
-            if (old != null) Destroy(old.gameObject);
+            if (old != null) Kill(old.gameObject);
             var label = AddLabel(psuRoot.transform, $"{watts}W", new Vector3(0, 0.09f, -0.142f), Quaternion.identity, 0.006f, new Color(0.85f, 0.87f, 0.9f));
             label.name = "Watt Label";
             psuRoot.SetActive(false);
@@ -667,7 +685,7 @@ namespace SiliconForge.Game.Workshop
                 var p = Vector3.Lerp(Vector3.Lerp(a, mid, u), Vector3.Lerp(mid, b, u), u);
                 var seg = Cylinder(cableRoot.transform, "Cable", (prev + p) * 0.5f, new Vector3(0.022f, Vector3.Distance(prev, p) * 0.5f + 0.004f, 0.022f), mat);
                 seg.transform.up = (p - prev).normalized;
-                Destroy(seg.GetComponent<Collider>());
+                Kill(seg.GetComponent<Collider>());
                 prev = p;
             }
             if (animate)
@@ -811,7 +829,7 @@ namespace SiliconForge.Game.Workshop
         static void SetEmission(Renderer r, Color c)
         {
             if (r == null) return;
-            r.material.SetColor("_EmissionColor", c);
+            r.sharedMaterial.SetColor("_EmissionColor", c);
         }
 
         // ------------------------------------------------------------------ camera and clicks
@@ -860,6 +878,14 @@ namespace SiliconForge.Game.Workshop
 
         // ------------------------------------------------------------------ primitives
 
+        /// <summary>Destroy in play mode, DestroyImmediate in the editor preview.</summary>
+        static void Kill(UnityEngine.Object obj)
+        {
+            if (obj == null) return;
+            if (Application.isPlaying) Destroy(obj);
+            else DestroyImmediate(obj);
+        }
+
         GameObject Track(GameObject go)
         {
             spawned.Add(go);
@@ -885,7 +911,7 @@ namespace SiliconForge.Game.Workshop
             if (type == PrimitiveType.Cylinder)
             {
                 // Cylinders come with capsule colliders; boxes click more predictably.
-                Destroy(go.GetComponent<Collider>());
+                Kill(go.GetComponent<Collider>());
                 go.AddComponent<BoxCollider>();
             }
             return go;

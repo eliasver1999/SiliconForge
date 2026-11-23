@@ -36,6 +36,16 @@ namespace SiliconForge.Core
         public string playProgram;
         /// <summary>The cooler on the player's processor: -1 none fitted yet, 0 bare, 1 heatsink, 2 fan cooler.</summary>
         public int machineCooler = -1;
+        /// <summary>Station log entries the player has already read ("prologue", level ids, "ending").</summary>
+        public List<string> seenLogs = new List<string>();
+
+        public bool HasSeen(string logId) => seenLogs != null && seenLogs.Contains(logId);
+
+        public void MarkSeen(string logId)
+        {
+            seenLogs ??= new List<string>();
+            if (!seenLogs.Contains(logId)) seenLogs.Add(logId);
+        }
 
         public LevelProgress Progress(string id)
         {

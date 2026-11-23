@@ -126,13 +126,29 @@ namespace SiliconForge.Game
             Root.Add(next.Root);
         }
 
-        public void ShowCampaign() => ShowScreen(new CampaignScreen(this));
+        public void ShowCampaign()
+        {
+            var campaign = new CampaignScreen(this);
+            ShowScreen(campaign);
+            // The prologue greets a new player; the ending waits until the beacon is built.
+            if (!Save.HasSeen(Story.Prologue.id)) ShowLogOnce(Story.Prologue, campaign.Root);
+            else if (Save.IsSolved("PLAY") && !Save.HasSeen(Story.Ending.id)) ShowLogOnce(Story.Ending, campaign.Root);
+        }
 
         public void OpenLevel(LevelSpec level)
         {
             if (level == null) { ShowCampaign(); return; }
-            if (level.workshop) ShowScreen(new WorkshopScreen(this, level));
-            else ShowScreen(new BenchScreen(this, level));
+            IScreen next = level.workshop ? new WorkshopScreen(this, level) : new BenchScreen(this, level);
+            ShowScreen(next);
+            var entry = Story.ForLevel(level);
+            if (entry != null && !Save.HasSeen(level.id)) ShowLogOnce(entry, next.Root);
+        }
+
+        void ShowLogOnce(LogEntry entry, VisualElement host)
+        {
+            Save.MarkSeen(entry.id);
+            Persist();
+            StoryUi.ShowEntry(host, entry);
         }
 
         public bool IsUnlocked(LevelSpec level)

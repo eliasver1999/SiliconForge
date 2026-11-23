@@ -19,11 +19,12 @@ namespace SiliconForge.Game.UI
             brand.Add(Ui.Logo());
             var titles = new VisualElement();
             titles.Add(Ui.Text("SILICON FORGE", "brand__name"));
-            titles.Add(Ui.Text("From one logic gate to a working computer.", "brand__tagline"));
+            titles.Add(Ui.Text($"{Story.Station}  ·  Fabrication bay", "brand__tagline"));
             brand.Add(titles);
             header.Add(brand);
             header.Add(Ui.Div("spacer"));
 
+            header.Add(Ui.Button("Station log", () => StoryUi.ShowJournal(Root, app.Save), "btn--small", "header-log"));
             var stats = Ui.Div("header-stats");
             stats.Add(HeaderStat($"{app.Save.SolvedCount} / {Campaign.Levels.Count}", "CONTRACTS"));
             stats.Add(HeaderStat(app.Save.chips.Count.ToString(), "CHIPS DESIGNED"));

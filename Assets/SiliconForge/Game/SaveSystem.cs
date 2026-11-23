@@ -21,6 +21,7 @@ namespace SiliconForge.Game
                         data.progress ??= new System.Collections.Generic.List<LevelProgress>();
                         data.work ??= new System.Collections.Generic.List<LevelWork>();
                         data.chips ??= new System.Collections.Generic.List<ChipDefinition>();
+                        data.seenLogs ??= new System.Collections.Generic.List<string>();
                         return data;
                     }
                 }

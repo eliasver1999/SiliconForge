@@ -381,6 +381,9 @@ namespace SiliconForge.EditorTools
                 progress.solved = true;
                 progress.stars = 3;
             }
+            // Mark the story as read so testing isn't interrupted by log cards. The ending still plays after Press Start.
+            save.MarkSeen(Story.Prologue.id);
+            foreach (var level in Campaign.Levels) save.MarkSeen(level.id);
             save.machinePsuWatts = 100;
             save.machineCooler = 2;
             report = log.ToString();
