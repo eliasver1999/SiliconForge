@@ -77,7 +77,65 @@ namespace SiliconForge.Core
             new EraSpec { numeral = "III", name = "First Machine", description = "Mount it, power it, switch it on." },
             new EraSpec { numeral = "IV", name = "Memory", description = "Circuits that remember, and a clock to drive them." },
             new EraSpec { numeral = "V", name = "Processor", description = "A machine that follows instructions you write." },
+            new EraSpec { numeral = "VI", name = "Computer", description = "Memory, a screen, and the heat they make." },
         };
+
+        /// <summary>D bits 0-3, A bits 4-5, Write bit 6, Clk bit 7. Q is the word at address A.</summary>
+        static SeqStep[] RamSequence()
+        {
+            var mem = new int[4];
+            var known = new bool[4];
+            var steps = new List<SeqStep>();
+            bool clkWas = false;
+            void Step(int d, int a, int write, int clk)
+            {
+                if (clk == 1 && !clkWas && write == 1) { mem[a] = d; known[a] = true; }
+                clkWas = clk == 1;
+                steps.Add(new SeqStep { inputs = d | (a << 4) | (write << 6) | (clk << 7), expected = mem[a], mask = known[a] ? 15 : 0 });
+            }
+            void WriteWord(int a, int d) { Step(d, a, 1, 0); Step(d, a, 1, 1); Step(d, a, 1, 0); }
+            void ReadAll() { for (int a = 0; a < 4; a++) Step(0, a, 0, 0); }
+
+            WriteWord(0, 3); WriteWord(1, 12); WriteWord(2, 5); WriteWord(3, 10);
+            ReadAll();
+            Step(15, 1, 0, 0); Step(15, 1, 0, 1); Step(15, 1, 0, 0); // a clock edge without Write changes nothing
+            WriteWord(2, 15);
+            ReadAll();
+            return steps.ToArray();
+        }
+
+        public const string Cpu2TestProgram =
+            "LDI 5\nSTA 2\nADD 1\nSTA 0\nJZ 0\nLDI 15\nSTA 3\nADD 1\nJZ 10\nLDI 3\nh: JMP h";
+
+        /// <summary>
+        /// Like the first processor's test, with STA. Inputs: N bits 0-3, Op 4-6, Clk 7, Reset 8.
+        /// Outputs: PC bits 0-3, A bits 4-7, W bit 8 (1 while the instruction on the inputs is STA).
+        /// </summary>
+        static SeqStep[] Cpu2Sequence()
+        {
+            var rom = Assembler.Assemble(Cpu2TestProgram, new List<AssemblyError>(), true);
+            var steps = new List<SeqStep>();
+            int pc = 0, a = 0;
+            bool aKnown = false;
+            int Expected(int word) => pc | (a << 4) | ((Isa.Op(word) == Isa.Sta ? 1 : 0) << 8);
+            void Add(int word, int extra, int mask) => steps.Add(new SeqStep { inputs = word | extra, expected = Expected(word), mask = mask });
+            int Mask() => 0x10F | (aKnown ? 0xF0 : 0);
+
+            const int clk = 1 << ComputerMachine.CpuClkBit, reset = 1 << ComputerMachine.CpuResetBit;
+            steps.Add(new SeqStep { inputs = rom[0] | reset, mask = 0 });
+            Add(rom[0], reset | clk, 0x10F);
+            Add(rom[0], reset, 0x10F);
+            Add(rom[0], 0, 0x10F);
+            for (int cycle = 0; cycle < 14; cycle++)
+            {
+                int word = rom[pc];
+                Isa.Execute(word, ref pc, ref a);
+                if (Isa.Op(word) == Isa.Ldi) aKnown = true;
+                Add(word, clk, Mask());
+                Add(rom[pc], 0, Mask());
+            }
+            return steps.ToArray();
+        }
 
         static BitGroup G(string name, int start, int width = 1, string[] labels = null) =>
             new BitGroup { name = name, start = start, width = width, labels = labels };
@@ -402,6 +460,62 @@ namespace SiliconForge.Core
                 id = "BOOT", era = 4, number = 21, title = "Boot", tagline = "Your first program.",
                 brief = "Pull the old chips, seat your processor and flash a program into ROM. Your task: make the machine count down from 9 to 0 on the display, then stop.\n\nThere's no subtract instruction, but adding 15 to a 4-bit number takes one away.",
                 workshop = true, wattsPerGate = 0.25f
+            },
+            new LevelSpec
+            {
+                id = "DEC2", era = 5, number = 22, title = "Decoder", tagline = "One line of four.",
+                brief = "Turn a 2-bit address into one of four lines: exactly one of Y0 to Y3 is 1, the one whose number is the address.\n\nAnother process shrink: from Era VI every gate draws 0.125 W.",
+                hint = "Y0 = NOT A0 AND NOT A1, Y1 = A0 AND NOT A1, and so on. Invert each address bit once and share it.",
+                inputs = new[] { "A0", "A1" }, outputs = Pins("Y", 4),
+                truth = x => 1 << x,
+                parts = new[] { PartTypes.Nand, "NOT", "AND", "OR" },
+                chipId = "DEC2", chipName = "Decoder", par = 10, wattsPerGate = 0.125f
+            },
+            new LevelSpec
+            {
+                id = "SEL4", era = 5, number = 23, title = "Word Selector", tagline = "Pick one of four numbers.",
+                brief = "Four 4-bit numbers come in: A, B, C and D. The 2-bit S picks which one comes out: 0 is A, 1 is B, 2 is C, 3 is D.\n\nYour memory will use this to read the word at an address.",
+                hint = "Two Bus Selectors pick within each pair using S0, then a third picks between the pairs using S1.",
+                inputs = Concat(Pins("A", 4), Pins("B", 4), Pins("C", 4), Pins("D", 4), new[] { "S0", "S1" }), outputs = Pins("Out", 4),
+                inputGroups = new[] { G("A", 0, 4), G("B", 4, 4), G("C", 8, 4), G("D", 12, 4), G("S", 16, 2) },
+                outputGroups = new[] { G("Out", 0, 4) },
+                truth = x => (x >> (4 * ((x >> 16) & 3))) & 15,
+                samples = new[] { 0x08421, 0x18421, 0x28421, 0x38421, 0x05A0F, 0x15A0F, 0x25A0F, 0x35A0F },
+                parts = new[] { PartTypes.Nand, "NOT", "MUX", "MUX4" },
+                chipId = "SEL4", chipName = "Word Selector", par = 39, wattsPerGate = 0.125f
+            },
+            new LevelSpec
+            {
+                id = "RAM4", era = 5, number = 24, title = "Memory", tagline = "Four words you can rewrite.",
+                brief = "Four 4-bit words of memory. Q always shows the word at address A. On a rising Clk edge, if Write is 1, the word at A becomes D. The other words don't change.\n\nThis is a tiny RAM. Your screen will display it.",
+                hint = "Four Nibble Registers hold the words. A Decoder on A picks which one loads: Load is Write AND that register's decoder line. A Word Selector on A picks which one Q shows.",
+                tip = "Press Space to toggle the Clk input. Reading is instant: change A and Q follows without a clock.",
+                inputs = Concat(Pins("D", 4), new[] { "A0", "A1", "Write", "Clk" }), outputs = Pins("Q", 4),
+                inputGroups = new[] { G("D", 0, 4), G("A", 4, 2), G("Write", 6), G("Clk", 7) },
+                outputGroups = new[] { G("Q", 0, 4) },
+                sequence = RamSequence(),
+                parts = new[] { PartTypes.Nand, "NOT", "AND", "OR", "DEC2", "SEL4", "MUX4", "REG", "REG4" },
+                chipId = "RAM4", chipName = "Memory", par = 265, wattsPerGate = 0.125f
+            },
+            new LevelSpec
+            {
+                id = "CPU2", era = 5, number = 25, title = "Processor II", tagline = "Now it can write.",
+                brief = "Your processor gets a third opcode bit and a new instruction:\n- STA N: write A to memory row N (0 to 3)\n\nDuring STA, raise the new W output; the machine sends A and N to the memory. STA must not change A and must not jump. Op2 is 0 for the four old instructions, which work as before.",
+                hint = "Start from your Processor's design. A should load only when Op1 and Op2 are both 0, and a jump needs Op2 to be 0. W is just Op2. Or wrap your old Processor chip: during STA, feed it an ADD with N forced to 0.",
+                tip = "The test plays a program with STA into your processor. W should be 1 exactly on the rows where Op is STA.",
+                inputs = Concat(Pins("N", 4), Pins("Op", 3), new[] { "Clk", "Reset" }),
+                outputs = Concat(Pins("PC", 4), Pins("A", 4), new[] { "W" }),
+                inputGroups = new[] { G("N", 0, 4), G("Op", 4, 3, Isa.OpLabels), G("Clk", 7), G("Reset", 8) },
+                outputGroups = new[] { G("PC", 0, 4), G("A", 4, 4), G("W", 8) },
+                sequence = Cpu2Sequence(),
+                parts = new[] { PartTypes.Nand, "NOT", "AND", "OR", "MUX", "MUX4", "ADD4", "ZERO", "REG4", "PC", "CPU" },
+                chipId = "CPU2", chipName = "Processor II", par = 190, wattsPerGate = 0.125f
+            },
+            new LevelSpec
+            {
+                id = "PIXELS", era = 5, number = 26, title = "First Picture", tagline = "Draw something.",
+                brief = "Upgrade to Processor II, add a RAM stick for video memory, a cooler and a screen. Then write a program that draws the smiley shown below.\n\nThe screen shows the RAM's four rows, top to bottom. STA writes A into a row, and bit 3 is the leftmost pixel, so 9 lights both ends of a row.",
+                workshop = true, wattsPerGate = 0.125f
             },
         };
 

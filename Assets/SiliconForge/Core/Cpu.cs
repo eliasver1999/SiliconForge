@@ -4,7 +4,8 @@ using System.Collections.Generic;
 namespace SiliconForge.Core
 {
     /// <summary>
-    /// The 4-bit processor's instruction set. One instruction is 6 bits: a 2-bit opcode and a 4-bit number N.
+    /// The 4-bit processor's instruction set. An instruction is an opcode and a 4-bit number N.
+    /// The first processor understands the four 2-bit opcodes; Processor II adds a third opcode bit for STA.
     /// There is one register, A, and a 4-bit program counter, so a program holds up to 16 instructions.
     /// </summary>
     public static class Isa
@@ -13,13 +14,16 @@ namespace SiliconForge.Core
         public const int Add = 1; // A = A + N (wraps at 16)
         public const int Jmp = 2; // PC = N
         public const int Jz = 3;  // if A == 0 then PC = N
-        public static readonly string[] Names = { "LDI", "ADD", "JMP", "JZ" };
+        public const int Sta = 4; // write A to memory row N (0-3). Processor II only.
+        public static readonly string[] Names = { "LDI", "ADD", "JMP", "JZ", "STA" };
+        /// <summary>Labels for a 3-bit opcode column; 5 to 7 are unused.</summary>
+        public static readonly string[] OpLabels = { "LDI", "ADD", "JMP", "JZ", "STA", "op5", "op6", "op7" };
         public const int RomSize = 16;
 
-        public static int Encode(int op, int n) => ((op & 3) << 4) | (n & 15);
-        public static int Op(int word) => (word >> 4) & 3;
+        public static int Encode(int op, int n) => ((op & 7) << 4) | (n & 15);
+        public static int Op(int word) => (word >> 4) & 7;
         public static int N(int word) => word & 15;
-        public static string Disassemble(int word) => $"{Names[Op(word)]} {N(word)}";
+        public static string Disassemble(int word) => $"{OpLabels[Op(word)]} {N(word)}";
 
         /// <summary>What the instruction should do. Used to generate tests and to check the player's processor.</summary>
         public static void Execute(int word, ref int pc, ref int a)
@@ -30,7 +34,8 @@ namespace SiliconForge.Core
                 case Ldi: a = n; pc = (pc + 1) & 15; break;
                 case Add: a = (a + n) & 15; pc = (pc + 1) & 15; break;
                 case Jmp: pc = n; break;
-                default: pc = a == 0 ? n : (pc + 1) & 15; break;
+                case Jz: pc = a == 0 ? n : (pc + 1) & 15; break;
+                default: pc = (pc + 1) & 15; break; // STA changes neither A nor the flow
             }
         }
     }
@@ -45,7 +50,8 @@ namespace SiliconForge.Core
     /// <summary>Turns assembly text into ROM words. Supports labels ("loop:"), comments (";" or "#") and numbers 0 to 15.</summary>
     public static class Assembler
     {
-        public static int[] Assemble(string source, List<AssemblyError> errors)
+        /// <param name="allowStore">STA only exists on Processor II.</param>
+        public static int[] Assemble(string source, List<AssemblyError> errors, bool allowStore = false)
         {
             var rom = new int[Isa.RomSize];
             var lines = (source ?? "").Replace("\r", "").Split('\n');
@@ -87,7 +93,9 @@ namespace SiliconForge.Core
             {
                 var (line, opText, argText) = pending[k];
                 int op = Array.FindIndex(Isa.Names, n => string.Equals(n, opText, StringComparison.OrdinalIgnoreCase));
-                if (op < 0) { errors.Add(new AssemblyError { line = line, message = $"Unknown instruction '{opText}'. Use LDI, ADD, JMP or JZ." }); continue; }
+                string known = allowStore ? "LDI, ADD, JMP, JZ or STA" : "LDI, ADD, JMP or JZ";
+                if (op < 0) { errors.Add(new AssemblyError { line = line, message = $"Unknown instruction '{opText}'. Use {known}." }); continue; }
+                if (op == Isa.Sta && !allowStore) { errors.Add(new AssemblyError { line = line, message = "STA needs Processor II, which you build in Era VI." }); continue; }
                 int value;
                 if (int.TryParse(argText, out value))
                 {
@@ -98,6 +106,7 @@ namespace SiliconForge.Core
                     errors.Add(new AssemblyError { line = line, message = $"There's no label called '{argText}'." });
                     continue;
                 }
+                if (op == Isa.Sta && value > 3) { errors.Add(new AssemblyError { line = line, message = "Memory has rows 0 to 3, so STA takes 0 to 3." }); continue; }
                 rom[k] = Isa.Encode(op, value);
             }
             return rom;

@@ -189,6 +189,66 @@ namespace SiliconForge.EditorTools
                 b.Wire(b.i[7], 0, pc, 1);
                 return b.c;
             },
+            ["DEC2"] = b =>
+            {
+                int na0 = b.Not(b.i[0]), na1 = b.Not(b.i[1]);
+                int[,] pairs = { { na0, na1 }, { b.i[0], na1 }, { na0, b.i[1] }, { b.i[0], b.i[1] } };
+                for (int k = 0; k < 4; k++) b.Out(b.Not(b.Nand(pairs[k, 0], 0, pairs[k, 1], 0)), 0, k);
+                return b.c;
+            },
+            ["SEL4"] = b =>
+            {
+                int low = b.Part("MUX4"), high = b.Part("MUX4"), pick = b.Part("MUX4");
+                for (int k = 0; k < 4; k++)
+                {
+                    b.Wire(b.i[k], 0, low, k); b.Wire(b.i[4 + k], 0, low, 4 + k);
+                    b.Wire(b.i[8 + k], 0, high, k); b.Wire(b.i[12 + k], 0, high, 4 + k);
+                    b.Wire(low, k, pick, k); b.Wire(high, k, pick, 4 + k);
+                    b.Out(pick, k, k);
+                }
+                b.Wire(b.i[16], 0, low, 8); b.Wire(b.i[16], 0, high, 8); b.Wire(b.i[17], 0, pick, 8);
+                return b.c;
+            },
+            ["RAM4"] = b =>
+            {
+                int dec = b.Part("DEC2"), sel = b.Part("SEL4");
+                b.Wire(b.i[4], 0, dec, 0); b.Wire(b.i[5], 0, dec, 1);
+                b.Wire(b.i[4], 0, sel, 16); b.Wire(b.i[5], 0, sel, 17);
+                for (int k = 0; k < 4; k++)
+                {
+                    int reg = b.Part("REG4");
+                    for (int bit = 0; bit < 4; bit++) { b.Wire(b.i[bit], 0, reg, bit); b.Wire(reg, bit, sel, k * 4 + bit); }
+                    b.Wire(b.Not(b.Nand(b.i[6], 0, dec, k)), 0, reg, 4); // load = Write AND this word's line
+                    b.Wire(b.i[7], 0, reg, 5);
+                }
+                for (int bit = 0; bit < 4; bit++) b.Out(sel, bit, bit);
+                return b.c;
+            },
+            ["CPU2"] = b =>
+            {
+                int add = b.Part("ADD4"), mux = b.Part("MUX4"), reg = b.Part("REG4"), zero = b.Part("ZERO"), pc = b.Part("PC");
+                for (int k = 0; k < 4; k++)
+                {
+                    b.Wire(reg, k, add, k); b.Wire(b.i[k], 0, add, 4 + k);
+                    b.Wire(b.i[k], 0, mux, k); b.Wire(add, k, mux, 4 + k);
+                    b.Wire(mux, k, reg, k);
+                    b.Wire(reg, k, zero, k);
+                    b.Wire(b.i[k], 0, pc, 3 + k);
+                    b.Out(pc, k, k);
+                    b.Out(reg, k, 4 + k);
+                }
+                b.Wire(b.i[4], 0, mux, 8);
+                int notOp2 = b.Not(b.i[6]);
+                b.Wire(b.Not(b.Nand(b.Not(b.i[5]), 0, notOp2, 0)), 0, reg, 4); // load only for LDI and ADD
+                b.Wire(b.i[7], 0, reg, 5);
+                int allowed = b.Nand(b.i[4], 0, b.Not(zero), 0);
+                int oldJump = b.Not(b.Nand(b.i[5], 0, allowed, 0));
+                b.Wire(b.Not(b.Nand(oldJump, 0, notOp2, 0)), 0, pc, 2);       // never jump during STA
+                b.Wire(b.i[7], 0, pc, 0);
+                b.Wire(b.i[8], 0, pc, 1);
+                b.Out(b.i[6], 0, 8);                                           // W = Op2
+                return b.c;
+            },
         };
 
         static int Xor(Board b, int a, int ap, int c, int cp, out int first)

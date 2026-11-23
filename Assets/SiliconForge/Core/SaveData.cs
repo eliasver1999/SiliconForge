@@ -30,6 +30,8 @@ namespace SiliconForge.Core
         public int machinePsuWatts;
         /// <summary>The last program the player flashed into ROM.</summary>
         public string program;
+        /// <summary>The last program flashed in First Picture (Processor II).</summary>
+        public string pixelsProgram;
 
         public LevelProgress Progress(string id)
         {

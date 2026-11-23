@@ -32,7 +32,11 @@ namespace SiliconForge.Game.Workshop
         readonly List<GameObject> spawned = new List<GameObject>();
 
         GameObject caseRoot, boardRoot, chipRoot, psuRoot, cableRoot, counterRoot, clockRoot;
-        Renderer clockLed;
+        GameObject ramRoot, heatsinkRoot, fanCoolerRoot, monitorRoot;
+        Transform coolerFan;
+        Renderer clockLed, chipLid;
+        readonly Renderer[] pixels = new Renderer[16];
+        readonly int[] shownRows = { -1, -1, -1, -1 };
         Transform fan;
         Renderer powerRing, powerLed;
         Light displayGlow;
@@ -50,7 +54,7 @@ namespace SiliconForge.Game.Workshop
 
         float yaw = -26f, pitch = 36f, distance = 3.4f;
         float yawTarget, pitchTarget, distanceTarget;
-        readonly Vector3 focus = new Vector3(0.02f, 0.14f, 0f);
+        Vector3 focus = new Vector3(0.02f, 0.14f, 0f);
 
         AmbientMode savedAmbientMode;
         Color savedSky, savedEquator, savedGround;
@@ -78,6 +82,11 @@ namespace SiliconForge.Game.Workshop
             psuRoot.SetActive(false);
             counterRoot.SetActive(false);
             clockRoot.SetActive(false);
+            BuildMonitor();
+            ramRoot.SetActive(false);
+            heatsinkRoot.SetActive(false);
+            fanCoolerRoot.SetActive(false);
+            monitorRoot.SetActive(false);
             SetInputs(0);
             ApplyOutputs();
         }
@@ -273,7 +282,20 @@ namespace SiliconForge.Game.Workshop
             chipRoot.transform.SetParent(t, false);
             chipRoot.transform.localPosition = new Vector3(socketPos.x, 0.068f, socketPos.z);
             Box(chipRoot.transform, "Package", Vector3.zero, new Vector3(0.2f, 0.026f, 0.2f), Mat(new Color(0.035f, 0.035f, 0.04f), 0.75f));
-            Box(chipRoot.transform, "Lid", new Vector3(0, 0.015f, 0), new Vector3(0.14f, 0.004f, 0.14f), Mat(new Color(0.38f, 0.4f, 0.43f), 0.35f, 0.6f));
+            chipLid = Box(chipRoot.transform, "Lid", new Vector3(0, 0.015f, 0), new Vector3(0.14f, 0.004f, 0.14f), Mat(new Color(0.38f, 0.4f, 0.43f), 0.35f, 0.6f, true)).GetComponent<Renderer>();
+            BuildCoolers(chipRoot.transform);
+
+            // RAM slot at the back left; the stick itself arrives in Era VI.
+            var slotPos = new Vector3(-0.2f, 0f, 0.27f);
+            Box(t, "RAM Slot", new Vector3(slotPos.x, 0.049f, slotPos.z), new Vector3(0.27f, 0.018f, 0.03f), Mat(new Color(0.06f, 0.06f, 0.07f), 0.4f));
+            ramRoot = Track(new GameObject("RAM Stick"));
+            ramRoot.transform.SetParent(t, false);
+            ramRoot.transform.localPosition = slotPos;
+            Box(ramRoot.transform, "PCB", new Vector3(0, 0.097f, 0), new Vector3(0.25f, 0.075f, 0.008f), Mat(new Color(0.05f, 0.3f, 0.2f), 0.55f));
+            Box(ramRoot.transform, "Contacts", new Vector3(0, 0.063f, 0), new Vector3(0.24f, 0.008f, 0.009f), Mat(new Color(0.8f, 0.65f, 0.35f), 0.6f, 0.9f));
+            var ramChip = Mat(new Color(0.03f, 0.03f, 0.035f), 0.7f);
+            for (int k = 0; k < 4; k++)
+                Box(ramRoot.transform, "RAM Chip", new Vector3(-0.09f + k * 0.06f, 0.102f, -0.006f), new Vector3(0.045f, 0.03f, 0.004f), ramChip);
 
             // A second, smaller socket waits empty until the counter arrives.
             var socket2 = new Vector3(0.33f, 0f, -0.13f);
@@ -292,6 +314,74 @@ namespace SiliconForge.Game.Workshop
             var cled = Cylinder(clockRoot.transform, "Clock LED", new Vector3(0.06f, 0f, 0f), new Vector3(0.018f, 0.01f, 0.018f),
                 Mat(new Color(0.05f, 0.12f, 0.15f), 0.8f, 0f, true));
             clockLed = cled.GetComponent<Renderer>();
+        }
+
+        void BuildCoolers(Transform chip)
+        {
+            var alu = Mat(new Color(0.7f, 0.72f, 0.75f), 0.55f, 0.85f);
+            GameObject Heatsink(string name)
+            {
+                var root = new GameObject(name);
+                root.transform.SetParent(chip, false);
+                Box(root.transform, "Base", new Vector3(0, 0.024f, 0), new Vector3(0.16f, 0.012f, 0.16f), alu);
+                for (int k = 0; k < 7; k++)
+                    Box(root.transform, "Fin", new Vector3(-0.066f + k * 0.022f, 0.055f, 0), new Vector3(0.008f, 0.05f, 0.15f), alu);
+                return root;
+            }
+
+            heatsinkRoot = Heatsink("Heatsink");
+            fanCoolerRoot = Heatsink("Fan Cooler");
+            var frame = Mat(new Color(0.1f, 0.1f, 0.12f), 0.4f);
+            Box(fanCoolerRoot.transform, "Fan Frame", new Vector3(0, 0.092f, 0), new Vector3(0.16f, 0.022f, 0.16f), frame);
+            coolerFan = new GameObject("Fan").transform;
+            coolerFan.SetParent(fanCoolerRoot.transform, false);
+            coolerFan.localPosition = new Vector3(0, 0.106f, 0);
+            var blade = Mat(new Color(0.22f, 0.23f, 0.27f), 0.4f);
+            Cylinder(coolerFan, "Hub", Vector3.zero, new Vector3(0.04f, 0.004f, 0.04f), blade);
+            for (int i = 0; i < 5; i++)
+            {
+                var b = Box(coolerFan, "Blade", Vector3.zero, new Vector3(0.06f, 0.003f, 0.026f), blade);
+                b.transform.localRotation = Quaternion.Euler(18f, i * 72f, 0f);
+                b.transform.localPosition = b.transform.localRotation * new Vector3(0.036f, 0f, 0f);
+            }
+        }
+
+        /// <summary>A small monitor on the desk to the right of the case, with a 4x4 grid of pixels.</summary>
+        void BuildMonitor()
+        {
+            monitorRoot = Track(new GameObject("Monitor"));
+            monitorRoot.transform.position = new Vector3(1.3f, 0f, -0.05f);
+            monitorRoot.transform.rotation = Quaternion.Euler(0f, -12f, 0f);
+            var t = monitorRoot.transform;
+            var body = Mat(new Color(0.07f, 0.075f, 0.085f), 0.5f, 0.3f);
+            Box(t, "Stand", new Vector3(0, 0.006f, 0.02f), new Vector3(0.22f, 0.012f, 0.14f), body);
+            Box(t, "Neck", new Vector3(0, 0.12f, 0.04f), new Vector3(0.04f, 0.22f, 0.03f), body);
+            Box(t, "Bezel", new Vector3(0, 0.4f, 0.02f), new Vector3(0.48f, 0.4f, 0.035f), body);
+            Box(t, "Glass", new Vector3(0, 0.4f, 0.0015f), new Vector3(0.42f, 0.34f, 0.002f), Mat(new Color(0.015f, 0.015f, 0.02f), 0.9f));
+            for (int r = 0; r < 4; r++)
+            for (int c = 0; c < 4; c++)
+            {
+                var pos = new Vector3(-0.135f + c * 0.09f, 0.512f - r * 0.075f, -0.001f);
+                var px = Box(t, $"Pixel {r}{c}", pos, new Vector3(0.074f, 0.062f, 0.003f), Mat(new Color(0.07f, 0.055f, 0.04f), 0.6f, 0f, true));
+                Destroy(px.GetComponent<Collider>());
+                pixels[r * 4 + c] = px.GetComponent<Renderer>();
+            }
+
+            // Cable from the monitor back to the case.
+            var cable = Mat(new Color(0.05f, 0.05f, 0.06f), 0.35f);
+            var a = new Vector3(1.32f, 0.015f, 0.08f);
+            var b2 = new Vector3(0.7f, 0.015f, 0.3f);
+            var mid = (a + b2) * 0.5f + new Vector3(0f, 0.01f, 0.12f);
+            Vector3 prev = a;
+            for (int i = 1; i <= 14; i++)
+            {
+                float u = i / 14f;
+                var p = Vector3.Lerp(Vector3.Lerp(a, mid, u), Vector3.Lerp(mid, b2, u), u);
+                var seg = Cylinder(null, "Monitor Cable", (prev + p) * 0.5f, new Vector3(0.016f, Vector3.Distance(prev, p) * 0.5f + 0.003f, 0.016f), cable);
+                seg.transform.SetParent(t, true);
+                seg.transform.up = (p - prev).normalized;
+                prev = p;
+            }
         }
 
         void BuildDigit(Transform parent, int digit, Vector3 center)
@@ -385,6 +475,61 @@ namespace SiliconForge.Game.Workshop
         }
 
         public void InstallClock() => Show(clockRoot, 0.3f, true);
+        public void InstallRam() => Show(ramRoot, 0.35f, true);
+        public void InstallMonitor() => Show(monitorRoot, 0.3f, true);
+
+        /// <summary>0 removes any cooler, 1 fits the heatsink, 2 the heatsink with a fan.</summary>
+        public void InstallCooler(int kind)
+        {
+            heatsinkRoot.SetActive(false);
+            fanCoolerRoot.SetActive(false);
+            if (kind == 1) Show(heatsinkRoot, 0.25f, true);
+            if (kind == 2) Show(fanCoolerRoot, 0.25f, true);
+        }
+
+        /// <summary>Lifts the processor out and drops the new one in. Returns how long it takes.</summary>
+        public float SwapChip(string label)
+        {
+            StartCoroutine(SwapRoutine(label));
+            return 1.1f;
+        }
+
+        IEnumerator SwapRoutine(string label)
+        {
+            heatsinkRoot.SetActive(false);
+            fanCoolerRoot.SetActive(false);
+            yield return Lift(chipRoot);
+            yield return new WaitForSeconds(0.1f);
+            InstallChip(label);
+        }
+
+        /// <summary>0 is cool, 1 is about to shut down: the processor lid glows red.</summary>
+        public void SetHeat(float amount) =>
+            SetEmission(chipLid, amount <= 0f ? Color.black : new Color(1f, 0.22f, 0.04f) * (Mathf.Clamp01(amount) * 4f));
+
+        /// <summary>Lights the monitor's 4x4 grid. Bit 3 of each row is its leftmost pixel.</summary>
+        public void SetPixels(int[] rows)
+        {
+            bool on = powered;
+            for (int r = 0; r < 4; r++)
+            {
+                int row = on ? rows[r] : -2;
+                if (row == shownRows[r]) continue;
+                shownRows[r] = row;
+                for (int c = 0; c < 4; c++)
+                {
+                    bool lit = on && ((rows[r] >> (3 - c)) & 1) != 0;
+                    // Kept under the bloom threshold's sweet spot so lit pixels stay amber instead of washing out to white.
+                    SetEmission(pixels[r * 4 + c], lit ? new Color(1f, 0.55f, 0.15f) * 1.6f : Color.black);
+                }
+            }
+        }
+
+        public void SetFocus(Vector3 point, float viewDistance)
+        {
+            focus = point;
+            distance = distanceTarget = viewDistance;
+        }
 
         public void InstallPsu(int watts, bool animate = true)
         {
@@ -398,14 +543,14 @@ namespace SiliconForge.Game.Workshop
         }
 
         /// <summary>Puts the machine from earlier eras back on the bench without animation.</summary>
-        public void BuildPreinstalled(string adderLabel, int psuWatts, bool clock = false, string counterLabel = null)
+        public void BuildPreinstalled(string chipLabel, int psuWatts, bool clock = false, string socket2Label = null)
         {
             caseRoot.SetActive(true);
             boardRoot.SetActive(true);
-            InstallChip(adderLabel, false);
+            InstallChip(chipLabel, false);
             InstallPsu(psuWatts, false);
             if (clock) clockRoot.SetActive(true);
-            if (counterLabel != null) InstallCounter(counterLabel, false);
+            if (socket2Label != null) InstallCounter(socket2Label, false);
         }
 
         public void SetClockLed(bool on) => SetEmission(clockLed, on ? new Color(0.3f, 0.85f, 1f) * 3f : Color.black);
@@ -515,6 +660,8 @@ namespace SiliconForge.Game.Workshop
             Sfx.StopHum();
             SetPowerLights(false, 0f);
             SetClockLed(false);
+            SetHeat(0f);
+            SetPixels(new int[4]);
             displayGlow.intensity = 0f;
             ApplyOutputs();
         }
@@ -605,6 +752,7 @@ namespace SiliconForge.Game.Workshop
         {
             fanSpeed = Mathf.MoveTowards(fanSpeed, fanTarget, Time.deltaTime * (fanTarget > fanSpeed ? 900f : 450f));
             if (fan != null) fan.Rotate(0f, fanSpeed * Time.deltaTime, 0f, Space.Self);
+            if (coolerFan != null) coolerFan.Rotate(0f, fanSpeed * 1.4f * Time.deltaTime, 0f, Space.Self);
         }
 
         void LateUpdate()
