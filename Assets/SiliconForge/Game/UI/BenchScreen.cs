@@ -15,6 +15,7 @@ namespace SiliconForge.Game.UI
         readonly GameApp app;
         readonly LevelSpec level;
         readonly CircuitView view;
+        internal CircuitView View => view;
         readonly bool[] inputs;
         readonly Stack<string> undo = new Stack<string>();
         readonly Stack<string> redo = new Stack<string>();
@@ -29,7 +30,12 @@ namespace SiliconForge.Game.UI
         Label gatesValue, delayValue, powerValue, tableMeta, toastText;
         VisualElement gatesStat, table, banner, toast;
         Label bannerText;
-        UiButton undoButton, redoButton;
+        UiButton undoButton, redoButton, runButton, hintButton;
+        VisualElement hintList, nandPaletteItem;
+        Label hintNote;
+        ScrollView briefScroll;
+        FirstContractCoach coach;
+        int failedRuns;
         IVisualElementScheduledItem toastHide;
 
         // Palette drag state
@@ -53,7 +59,8 @@ namespace SiliconForge.Game.UI
             var board = Ui.Div("board");
             view = new CircuitView(app.Catalog);
             board.Add(view);
-            if (!string.IsNullOrEmpty(level.tip) && !app.Save.IsSolved(level.id)) board.Add(BuildTip());
+            bool coached = level.number == 1 && !app.Save.IsSolved(level.id) && !app.Save.HasSeen(FirstContractCoach.SeenId);
+            if (!coached && !string.IsNullOrEmpty(level.tip) && !app.Save.IsSolved(level.id)) board.Add(BuildTip());
             board.Add(BuildZoomBar());
             toast = Ui.Div("toast");
             toast.pickingMode = PickingMode.Ignore;
@@ -72,14 +79,37 @@ namespace SiliconForge.Game.UI
             view.AllowedTypes = new HashSet<string>(level.parts);
             view.SetCircuit(circuit);
             view.Edited += OnEdited;
-            view.InputToggled += i => { inputs[i] = !inputs[i]; };
+            view.InputToggled += i => { inputs[i] = !inputs[i]; coach?.InputToggled(); };
             view.Message += ShowToast;
             view.RegisterCallback<KeyDownEvent>(OnKeyDown);
 
             Recompile();
+            if (coached) StartCoach(board);
         }
 
-        public void Dispose() { }
+        public void Dispose() => coach?.Dispose();
+
+        // ------------------------------------------------------------------ first-contract tutorial
+
+        void StartCoach(VisualElement board)
+        {
+            coach = new FirstContractCoach(
+                () => circuit,
+                nandPaletteItem,
+                type => view.ElementFor(circuit.parts.Find(p => p.type == type)?.id ?? -1),
+                runButton,
+                EndCoach);
+            board.Insert(board.IndexOf(view) + 1, coach.Root);
+        }
+
+        void EndCoach()
+        {
+            if (coach == null) return;
+            coach.Dispose();
+            coach = null;
+            app.Save.MarkSeen(FirstContractCoach.SeenId);
+            app.Persist();
+        }
 
         public void Tick(float dt)
         {
@@ -160,6 +190,7 @@ namespace SiliconForge.Game.UI
             snapshot = JsonUtility.ToJson(circuit);
             Recompile();
             app.Persist();
+            coach?.Refresh();
         }
 
         void TrimUndo()
@@ -182,6 +213,7 @@ namespace SiliconForge.Game.UI
             view.SetCircuit(circuit);
             Recompile();
             app.Persist();
+            coach?.Refresh();
         }
 
         void ClearBoard()
@@ -227,14 +259,15 @@ namespace SiliconForge.Game.UI
 
         // ------------------------------------------------------------------ testing
 
-        void RunTests()
+        internal void RunTests()
         {
             if (netlist == null) return;
             report = TestBench.Run(netlist, level);
-            RenderTable();
+            coach?.TestsRun(report.AllPassed);
 
             if (report.AllPassed)
             {
+                RenderTable();
                 banner.Hidden(true);
                 Sfx.Play(SfxId.Success);
                 OnCertified();
@@ -242,17 +275,31 @@ namespace SiliconForge.Game.UI
             }
 
             Sfx.Play(SfxId.Fail);
-            banner.Hidden(false);
-            if (report.unstable)
-                bannerText.text = "Your circuit never settles: a loop of gates keeps flipping. Break the loop and run the tests again.";
-            else if (level.IsSequential)
+            failedRuns++;
+            string explanation = TestExplainer.Explain(level, report);
+            int first = TestExplainer.FirstFailure(report);
+            if (!level.IsSequential && first >= 0)
             {
-                int first = 0;
-                while (first < report.total && report.cases[first].Pass) first++;
-                bannerText.text = $"{report.passed} of {report.total} steps pass. Step {first + 1} is the first one that goes wrong.";
+                // Put the failing case on the switches so the player can trace it on the board right away.
+                for (int i = 0; i < inputs.Length; i++) inputs[i] = ((first >> i) & 1) != 0;
+                explanation += " That case is now on the input switches, so you can trace it on the board.";
             }
-            else
-                bannerText.text = $"{report.passed} of {report.total} cases pass. Wrong rows are marked red. Click a row to load its inputs onto the board.";
+            RenderTable();
+            banner.Hidden(false);
+            bannerText.text = explanation;
+            ScrollToFirstFailure();
+            if (failedRuns >= 2 && HintsLeft > 0) hintButton.AddToClassList("hints__button--nudge");
+        }
+
+        /// <summary>Brings the explanation into view, and the failing row too when it fits below it.</summary>
+        void ScrollToFirstFailure()
+        {
+            var row = table.Q(className: "tt-row--first-fail");
+            briefScroll.schedule.Execute(() =>
+            {
+                if (row != null) briefScroll.ScrollTo(row);
+                briefScroll.ScrollTo(banner);
+            }).ExecuteLater(30);
         }
 
         void OnCertified()
@@ -260,6 +307,7 @@ namespace SiliconForge.Game.UI
             int gates = netlist.GateCount;
             int stars = Campaign.Stars(level, gates);
             app.RecordSolve(level, gates, stars, circuit);
+            EndCoach();
             gatesStat.AddToClassList("stat--good");
 
             var next = Campaign.Next(level);
@@ -346,7 +394,8 @@ namespace SiliconForge.Game.UI
             bar.Add(undoButton);
             bar.Add(redoButton);
             bar.Add(Ui.Button("Clear", ClearBoard, "btn--ghost"));
-            bar.Add(Ui.Button("Run tests", RunTests, "btn--primary"));
+            runButton = Ui.Button("Run tests", RunTests, "btn--primary");
+            bar.Add(runButton);
             return bar;
         }
 
@@ -361,7 +410,9 @@ namespace SiliconForge.Game.UI
             foreach (var type in level.parts)
             {
                 if (!app.Catalog.Has(type)) continue;
-                list.Add(PaletteItem(app.Catalog.Get(type)));
+                var item = PaletteItem(app.Catalog.Get(type));
+                if (type == PartTypes.Nand) nandPaletteItem = item;
+                list.Add(item);
             }
             palette.Add(list);
 
@@ -478,18 +529,7 @@ namespace SiliconForge.Game.UI
             inner.Add(Ui.Text(level.title, "brief__title"));
             inner.Add(Ui.Text(level.brief, "t-body"));
 
-            var hint = Ui.Div("brief__hint");
-            hint.Add(Ui.Text(level.hint, "brief__hint-text"));
-            hint.Hidden(true);
-            UiButton hintToggle = null;
-            hintToggle = Ui.Button("Show hint", () =>
-            {
-                bool show = hint.resolvedStyle.display == DisplayStyle.None;
-                hint.Hidden(!show);
-                hintToggle.Text = show ? "Hide hint" : "Show hint";
-            }, "btn--small", "brief__hint-toggle");
-            inner.Add(hintToggle);
-            inner.Add(hint);
+            inner.Add(BuildHints());
 
             inner.Add(Ui.Div("divider"));
 
@@ -500,14 +540,15 @@ namespace SiliconForge.Game.UI
             head.Add(tableMeta);
             inner.Add(head);
 
-            table = Ui.Div("tt");
-            inner.Add(table);
-
-            banner = Ui.Div("banner", "banner--bad");
+            // The explanation sits above the table so it's in view even when a test sequence runs to 30+ rows.
+            banner = Ui.Div("banner", "banner--bad", "banner--above-table");
             bannerText = Ui.Text("", "banner__text");
             banner.Add(bannerText);
             banner.Hidden(true);
             inner.Add(banner);
+
+            table = Ui.Div("tt");
+            inner.Add(table);
 
             inner.Add(Ui.Div("divider"));
             inner.Add(Ui.Text("TARGET", "t-eyebrow"));
@@ -527,7 +568,54 @@ namespace SiliconForge.Game.UI
 
             scroll.Add(inner);
             brief.Add(scroll);
+            briefScroll = scroll;
             return brief;
+        }
+
+        // ------------------------------------------------------------------ hints
+
+        string[] Hints => level.hints ?? new string[0];
+        int HintsShown => Mathf.Min(app.Save.Progress(level.id).hintsShown, Hints.Length);
+        int HintsLeft => Hints.Length - HintsShown;
+
+        VisualElement BuildHints()
+        {
+            var box = Ui.Div("hints");
+            hintList = Ui.Div("hints__list");
+            box.Add(hintList);
+            var row = Ui.Div("hints__row");
+            hintButton = Ui.Button("", RevealHint, "btn--small", "hints__button");
+            row.Add(hintButton);
+            hintNote = Ui.Text("Hints never cost stars.", "hints__note");
+            row.Add(hintNote);
+            box.Add(row);
+            RenderHints();
+            return box;
+        }
+
+        internal void RevealHint()
+        {
+            if (HintsLeft <= 0) return;
+            app.Save.Progress(level.id).hintsShown = HintsShown + 1;
+            app.Persist();
+            hintButton.RemoveFromClassList("hints__button--nudge");
+            Sfx.Play(SfxId.Click);
+            RenderHints();
+        }
+
+        void RenderHints()
+        {
+            hintList.Clear();
+            for (int i = 0; i < HintsShown; i++)
+            {
+                var card = Ui.Div("brief__hint");
+                card.Add(Ui.Text($"HINT {i + 1} OF {Hints.Length}", "hints__label"));
+                card.Add(Ui.Text(Hints[i], "brief__hint-text"));
+                hintList.Add(card);
+            }
+            hintButton.Text = HintsShown == 0 ? "Need a hint?" : (HintsLeft == 1 ? "Last hint" : "Another hint");
+            hintButton.parent.Hidden(HintsLeft == 0);
+            hintNote.Hidden(HintsShown > 0);
         }
 
         void RenderTable()
@@ -549,6 +637,7 @@ namespace SiliconForge.Game.UI
 
             var rows = RowsToShow(out string note);
             int live = sequential ? -1 : InputBits;
+            int firstFail = report != null ? TestExplainer.FirstFailure(report) : -1;
             int allOutputs = (1 << level.outputs.Length) - 1;
             for (int r = 0; r < rows.Count; r++)
             {
@@ -571,6 +660,7 @@ namespace SiliconForge.Game.UI
                 var row = Ui.Div("tt-row");
                 if (r == rows.Count - 1) row.AddToClassList("tt-row--last");
                 if (key == live) row.AddToClassList("tt-row--live");
+                if (key == firstFail) row.AddToClassList("tt-row--first-fail");
                 if (sequential)
                 {
                     var num = Cell((key + 1).ToString(), new Column { name = StepColumn }, false);

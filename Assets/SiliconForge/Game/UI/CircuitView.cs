@@ -111,6 +111,9 @@ namespace SiliconForge.Game.UI
 
         // ------------------------------------------------------------------ data
 
+        /// <summary>The element showing a part, or null. Elements are rebuilt by SetCircuit, so don't hold on to it.</summary>
+        public VisualElement ElementFor(int partId) => elements.TryGetValue(partId, out var e) ? e : null;
+
         public void SetCircuit(CircuitData circuit)
         {
             Circuit = circuit;

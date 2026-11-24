@@ -231,6 +231,70 @@ namespace SiliconForge.Tests
         }
     }
 
+    public class HelpTests
+    {
+        static TestReport RunEmptyBoard(string id)
+        {
+            var level = Campaign.Get(id);
+            var board = new ReferenceDesigns.Board(level);
+            return TestBench.Run(Netlist.Compile(board.c, Certified.Catalog, level.inputs.Length, level.outputs.Length), level);
+        }
+
+        [Test]
+        public void EveryChipContractHasThreeDifferentHints()
+        {
+            foreach (var level in Campaign.Levels.Where(l => !l.workshop))
+            {
+                Assert.That(level.hints, Has.Length.EqualTo(3), $"{level.id} needs three hints");
+                Assert.That(level.hints, Has.All.Not.Empty, $"{level.id} has an empty hint");
+                Assert.That(level.hints.Distinct().Count(), Is.EqualTo(3), $"{level.id} repeats a hint");
+            }
+        }
+
+        [Test]
+        public void ExplainsTheFirstWrongRow() =>
+            Assert.That(TestExplainer.Explain(Campaign.Get("AND"), RunEmptyBoard("AND")),
+                Is.EqualTo("3 of 4 cases pass. With A = 1 and B = 1, Out should be 1, but your circuit gives 0."));
+
+        [Test]
+        public void ExplainsGroupedPinsAsNumbers() =>
+            Assert.That(TestExplainer.Explain(Campaign.Get("MUX4"), RunEmptyBoard("MUX4")),
+                Does.EndWith("With A = 1, B = 0 and Sel = 0, Out should be 1, but your circuit gives 0."));
+
+        [Test]
+        public void ListsEveryWrongOutput()
+        {
+            string text = TestExplainer.Explain(Campaign.Get("HADD"), RunEmptyBoard("HADD"));
+            Assert.That(text, Does.EndWith("With A = 1 and B = 0, Sum should be 1, but your circuit gives 0."));
+            var level = Campaign.Get("DEC2");
+            Assert.That(TestExplainer.Explain(level, RunEmptyBoard("DEC2")),
+                Does.EndWith("With A0 = 0 and A1 = 0, Y0 should be 1, but your circuit gives 0."));
+        }
+
+        [Test]
+        public void ExplainsASequenceStepByWhatChanged()
+        {
+            var level = Campaign.Get("DFF");
+            var b = new ReferenceDesigns.Board(level);
+            int latch = b.Part("DLATCH");
+            b.Wire(b.i[0], 0, latch, 0);
+            b.Wire(b.i[1], 0, latch, 1);
+            b.Out(latch, 0, 0);
+            var report = TestBench.Run(Netlist.Compile(b.c, Certified.Catalog, 2, 1), level);
+            string text = TestExplainer.Explain(level, report);
+            int step = TestExplainer.FirstFailure(report);
+            Assert.That(text, Does.StartWith($"{report.passed} of {report.total} steps pass. At step {step + 1}, when "));
+            Assert.That(text, Does.Contain("Q should be"));
+        }
+
+        [Test]
+        public void SaysNothingWhenEverythingPasses()
+        {
+            var certified = Certified.Results.First(r => r.level.id == "XOR");
+            Assert.That(TestExplainer.Explain(certified.level, certified.report), Is.Null);
+        }
+    }
+
     public class CampaignTests
     {
         [Test]

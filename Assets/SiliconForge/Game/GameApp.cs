@@ -62,6 +62,33 @@ namespace SiliconForge.Game
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(folder, "smoke_settings.png"));
             yield return new WaitForSeconds(1f);
 
+            // The first contract's tutorial, before and after placing a NAND.
+            OpenLevel(Campaign.Levels[0]);
+            Root.Query(className: "modal-overlay").ForEach(e => e.RemoveFromHierarchy());
+            yield return new WaitForSeconds(1f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(folder, "smoke_tutorial_1.png"));
+            yield return new WaitForSeconds(0.5f);
+            var bench = (BenchScreen)screen;
+            bench.View.AddPart(PartTypes.Nand, bench.View.BoardCenter);
+            yield return new WaitForSeconds(1f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(folder, "smoke_tutorial_2.png"));
+            yield return new WaitForSeconds(0.5f);
+
+            // Two hints revealed and an empty board tested, on a truth table and on a test sequence.
+            foreach (var id in new[] { "HADD", "CPU" })
+            {
+                OpenLevel(Campaign.Get(id));
+                Root.Query(className: "modal-overlay").ForEach(e => e.RemoveFromHierarchy());
+                bench = (BenchScreen)screen;
+                bench.RevealHint();
+                bench.RevealHint();
+                yield return new WaitForSeconds(0.5f);
+                bench.RunTests();
+                yield return new WaitForSeconds(1f);
+                ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(folder, $"smoke_hints_{id}.png"));
+                yield return new WaitForSeconds(0.5f);
+            }
+
             screen?.Dispose();
             screen = null;
             Root.Clear();

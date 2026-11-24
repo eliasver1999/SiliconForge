@@ -43,7 +43,8 @@ namespace SiliconForge.Core
         public string title;
         public string tagline;
         public string brief;
-        public string hint;
+        /// <summary>Hints from a gentle nudge to nearly the answer, shown one at a time.</summary>
+        public string[] hints;
         /// <summary>Shown on the board for first-time players.</summary>
         public string tip;
         public string[] inputs = new string[0];
@@ -291,7 +292,12 @@ namespace SiliconForge.Core
             {
                 id = "NOT", era = 0, number = 1, title = "Inverter", tagline = "Flip a signal.",
                 brief = "Every chip in this workshop starts from one part: the NAND gate. It outputs 0 only when both of its inputs are 1.\n\nBuild an inverter: Out must always be the opposite of In.",
-                hint = "A NAND whose two inputs carry the same signal behaves like an inverter.",
+                hints = new[]
+                {
+                    "Out has to be 1 whenever In is 0. When does a NAND output 1?",
+                    "A NAND outputs 1 unless both of its inputs are 1. What happens if both inputs carry the same signal?",
+                    "Wire In to both inputs of a single NAND, then wire the NAND's output to Out.",
+                },
                 tip = "Drag a NAND from the parts list onto the board. Then drag from one pin to another to draw a wire. Click the In switch to try it.",
                 inputs = new[] { "In" }, outputs = new[] { "Out" },
                 truth = x => 1 - Bit(x, 0),
@@ -302,7 +308,12 @@ namespace SiliconForge.Core
             {
                 id = "AND", era = 0, number = 2, title = "AND Gate", tagline = "Both, or nothing.",
                 brief = "Out is 1 only when A and B are both 1.\n\nYour inverter is now in the parts list. Use it.",
-                hint = "NAND literally means NOT-AND. Undo the NOT.",
+                hints = new[]
+                {
+                    "You already have a gate that gives the exact opposite of AND.",
+                    "NAND means NOT-AND: it's AND with the answer flipped. You have a part that flips a signal.",
+                    "Feed A and B into a NAND, then put its output through your NOT. That's 2 gates.",
+                },
                 tip = "Right-click a part or wire to delete it. Scroll to zoom, right-drag to pan, and drag across empty board to select several parts.",
                 inputs = new[] { "A", "B" }, outputs = new[] { "Out" },
                 truth = x => x == 3 ? 1 : 0,
@@ -313,7 +324,12 @@ namespace SiliconForge.Core
             {
                 id = "OR", era = 0, number = 3, title = "OR Gate", tagline = "Either will do.",
                 brief = "Out is 1 when A is 1, B is 1, or both are.",
-                hint = "Invert both inputs first, and a NAND turns into an OR.",
+                hints = new[]
+                {
+                    "OR is 0 only when A and B are both 0. A NAND is 0 only when both of its inputs are 1. Can you connect the two?",
+                    "If the NAND's inputs were NOT A and NOT B, when would its output be 0?",
+                    "A NOT on A, a NOT on B, then a NAND of the two: 3 gates.",
+                },
                 inputs = new[] { "A", "B" }, outputs = new[] { "Out" },
                 truth = x => x != 0 ? 1 : 0,
                 parts = new[] { PartTypes.Nand, "NOT", "AND" },
@@ -323,7 +339,12 @@ namespace SiliconForge.Core
             {
                 id = "XOR", era = 0, number = 4, title = "Exclusive OR", tagline = "One or the other, not both.",
                 brief = "Out is 1 when exactly one of A and B is 1.\n\nThis little gate is the heart of binary addition.",
-                hint = "Four NANDs are enough. Start with NAND(A, B), then feed it into two more NANDs: one with A, one with B. Combine those two with a last NAND.",
+                hints = new[]
+                {
+                    "XOR is like OR, except it must be 0 when both inputs are 1.",
+                    "(A OR B) AND NOT (A AND B) works, but costs more than par. Build it from NANDs and look for a gate two parts can share.",
+                    "Four NANDs are enough. Start with NAND(A, B), then feed it into two more NANDs: one with A, one with B. Combine those two with a last NAND.",
+                },
                 inputs = new[] { "A", "B" }, outputs = new[] { "Out" },
                 truth = x => Bit(x, 0) ^ Bit(x, 1),
                 parts = new[] { PartTypes.Nand, "NOT", "AND", "OR" },
@@ -333,7 +354,12 @@ namespace SiliconForge.Core
             {
                 id = "HADD", era = 1, number = 5, title = "Half Adder", tagline = "1 + 1 = 10.",
                 brief = "Add two 1-bit numbers. Sum is the low bit of A + B, Carry is the high bit.\n\nIn binary 1 + 1 = 10, so that gives Sum 0 and Carry 1.",
-                hint = "Sum is XOR and Carry is AND. The 5-gate version reuses the first NAND inside your XOR to make the carry.",
+                hints = new[]
+                {
+                    "Write out the four cases. Which gate you've already built matches the Sum column? Which one matches Carry?",
+                    "Sum is XOR(A, B) and Carry is AND(A, B). That's 6 gates, and par needs one fewer.",
+                    "Build the XOR from 4 NANDs yourself. Its first gate is NAND(A, B), and a NOT on that gate gives you the carry: 5 gates.",
+                },
                 inputs = new[] { "A", "B" }, outputs = new[] { "Sum", "Carry" },
                 truth = x => Bit(x, 0) + Bit(x, 1),
                 parts = new[] { PartTypes.Nand, "NOT", "AND", "OR", "XOR" },
@@ -343,7 +369,12 @@ namespace SiliconForge.Core
             {
                 id = "FADD", era = 1, number = 6, title = "Full Adder", tagline = "Carry the one.",
                 brief = "Add three bits: A, B and a carry coming in from the previous column (Cin).\n\nChain these together and you can add numbers of any size.",
-                hint = "Two half adders and an OR will do it. For 9 gates: the carry out is a NAND of the two half adders' first NANDs.",
+                hints = new[]
+                {
+                    "Adding three bits is adding two of them, then adding the third to the result.",
+                    "Half-add A and B, then half-add that sum with Cin. A carry comes out if either half adder carries.",
+                    "Two half adders and an OR will do it. For 9 gates: the carry out is a NAND of the two half adders' first NANDs.",
+                },
                 inputs = new[] { "A", "B", "Cin" }, outputs = new[] { "Sum", "Cout" },
                 truth = x => Bit(x, 0) + Bit(x, 1) + Bit(x, 2),
                 parts = new[] { PartTypes.Nand, "NOT", "AND", "OR", "XOR", "HADD" },
@@ -353,7 +384,12 @@ namespace SiliconForge.Core
             {
                 id = "ADD4", era = 1, number = 7, title = "4-bit Adder", tagline = "Numbers up to 15 + 15.",
                 brief = "Add two 4-bit numbers. A0 and B0 are the lowest bits. S0 to S3 is the sum, and C is the carry out when the answer reaches 16.\n\nThis chip becomes the brain of your first machine, and every gate you save here shrinks its power bill.",
-                hint = "Ripple carry: a half adder for bit 0, then a full adder for each higher bit, each taking the carry from the bit below.",
+                hints = new[]
+                {
+                    "Add the way you would on paper: column by column, starting from the right, which is bit 0.",
+                    "Each column adds its A bit, its B bit and the carry from the column to its right. Bit 0 has no carry coming in.",
+                    "Ripple carry: a half adder for bit 0, then a full adder for each higher bit, each taking the carry from the bit below.",
+                },
                 inputs = new[] { "A0", "A1", "A2", "A3", "B0", "B1", "B2", "B3" },
                 outputs = new[] { "S0", "S1", "S2", "S3", "C" },
                 truth = x => (x & 15) + ((x >> 4) & 15),
@@ -371,7 +407,12 @@ namespace SiliconForge.Core
             {
                 id = "SR", era = 3, number = 9, title = "Set-Reset Latch", tagline = "Remember one bit.",
                 brief = "Until now every output depended only on the inputs right now. This one has memory.\n\nA pulse on Set turns Q on, a pulse on Reset turns it off, and when both are 0, Q keeps whatever it was. The test runs as a sequence, top to bottom, so the order matters.",
-                hint = "Two NANDs that feed each other's outputs back into their inputs form a loop that holds its value. Invert Set and Reset before they enter the loop.",
+                hints = new[]
+                {
+                    "To remember something, a circuit has to feed its own output back into itself.",
+                    "Two NANDs in a loop, each one's output feeding the other's input, will hold a value. Then work out how Set and Reset push it.",
+                    "Two NANDs that feed each other's outputs back into their inputs form a loop that holds its value. Invert Set and Reset before they enter the loop.",
+                },
                 tip = "Memory comes from feedback: it's fine to wire a gate's output back into the circuit that drives it. Never test Set and Reset both at 1.",
                 inputs = new[] { "Set", "Reset" }, outputs = new[] { "Q" },
                 sequence = Seq(1, 0b10, 0, 0b00, 0, 0b01, 1, 0b00, 1, 0b10, 0, 0b00, 0, 0b01, 1, 0b00, 1),
@@ -382,7 +423,12 @@ namespace SiliconForge.Core
             {
                 id = "DLATCH", era = 3, number = 10, title = "D Latch", tagline = "Hold on command.",
                 brief = "While Enable is 1, Q follows D. When Enable drops to 0, Q freezes on the last value of D and ignores D from then on.",
-                hint = "Make the latch's Set equal to D AND E, and its Reset equal to NOT D AND E. With NANDs you can skip the inverter: NAND(D, E) and NAND(that, E) drive the loop directly.",
+                hints = new[]
+                {
+                    "You already have a latch that remembers. All you need to control is when it listens.",
+                    "When E is 0, Set and Reset should both be 0 so the latch holds. When E is 1, D decides which of them fires.",
+                    "Make the latch's Set equal to D AND E, and its Reset equal to NOT D AND E. With NANDs you can skip the inverter: NAND(D, E) and NAND(that, E) drive the loop directly.",
+                },
                 inputs = new[] { "D", "E" }, outputs = new[] { "Q" },
                 sequence = Seq(1, 0b10, 0, 0b11, 1, 0b10, 0, 0b11, 1, 0b01, 1, 0b00, 1, 0b01, 1, 0b00, 1, 0b10, 0, 0b00, 0, 0b01, 0),
                 parts = new[] { PartTypes.Nand, "NOT", "AND", "OR", "SR" },
@@ -392,7 +438,12 @@ namespace SiliconForge.Core
             {
                 id = "MUX", era = 3, number = 11, title = "Selector", tagline = "Pick one of two.",
                 brief = "Out copies A when Sel is 0 and copies B when Sel is 1.\n\nThis tiny switch lets a circuit choose between keeping its old value and taking a new one.",
-                hint = "Out = (A AND NOT Sel) OR (B AND Sel). In NANDs that's four gates: NAND the two halves, then NAND the results.",
+                hints = new[]
+                {
+                    "Think of two gates: one lets A through only when Sel is 0, the other lets B through only when Sel is 1.",
+                    "That's A AND NOT Sel, and B AND Sel. Combine the two with an OR.",
+                    "Out = (A AND NOT Sel) OR (B AND Sel). In NANDs that's four gates: NAND the two halves, then NAND the results.",
+                },
                 inputs = new[] { "A", "B", "Sel" }, outputs = new[] { "Out" },
                 truth = x => Bit(x, 2) == 1 ? Bit(x, 1) : Bit(x, 0),
                 parts = new[] { PartTypes.Nand, "NOT", "AND", "OR" },
@@ -402,7 +453,12 @@ namespace SiliconForge.Core
             {
                 id = "DFF", era = 3, number = 12, title = "Flip-Flop", tagline = "Tick.",
                 brief = "Q takes the value of D only at the instant Clk rises from 0 to 1, and holds it until the next rise. Changing D at any other time does nothing.\n\nThis is how computers keep time: everything moves one step per clock tick.",
-                hint = "Two D latches in a row. The first is open while Clk is 0, the second while Clk is 1, so the value hops across only on the rising edge.",
+                hints = new[]
+                {
+                    "A latch stays open for as long as its Enable is 1, so D leaks straight through. You need Q to change at one instant only.",
+                    "Use two latches, one after the other, and make sure they're never open at the same time.",
+                    "Two D latches in a row. The first is open while Clk is 0, the second while Clk is 1, so the value hops across only on the rising edge.",
+                },
                 tip = "Press Space to toggle the Clk input.",
                 inputs = new[] { "D", "Clk" }, outputs = new[] { "Q" },
                 sequence = Seq(1, 0b00, -1, 0b10, 0, 0b00, 0, 0b01, 0, 0b11, 1, 0b10, 1, 0b00, 1, 0b10, 0, 0b00, 0, 0b01, 0, 0b11, 1, 0b01, 1, 0b00, 1),
@@ -413,7 +469,12 @@ namespace SiliconForge.Core
             {
                 id = "REG", era = 3, number = 13, title = "Register", tagline = "Keep it, or replace it.",
                 brief = "On each rising edge of Clk: if Load is 1, Q takes D. If Load is 0, Q keeps its value.\n\nA bank of these will one day hold the numbers your processor works on.",
-                hint = "Feed the flip-flop's D from a Selector that picks between Q itself and the new D, using Load to choose.",
+                hints = new[]
+                {
+                    "A flip-flop always takes D at the clock edge. When Load is 0, what should it take instead?",
+                    "When Load is 0, feed the flip-flop its own output so it stores the same value again.",
+                    "Feed the flip-flop's D from a Selector that picks between Q itself and the new D, using Load to choose.",
+                },
                 tip = "Press Space to toggle the Clk input.",
                 inputs = new[] { "D", "Load", "Clk" }, outputs = new[] { "Q" },
                 sequence = Seq(1,
@@ -426,7 +487,12 @@ namespace SiliconForge.Core
             {
                 id = "COUNT4", era = 3, number = 14, title = "4-bit Counter", tagline = "0, 1, 2, ... 15, 0.",
                 brief = "On every rising edge of Clk, Q goes up by one, wrapping from 15 back to 0. If Reset is 1 at the rising edge, Q goes to 0 instead.\n\nThis gives your machine a heartbeat. Its gate count joins your adder's on the power bill.",
-                hint = "Four flip-flops hold the count. Their next value is the count plus one: bit 0 flips every tick, and each higher bit flips when all the bits below it are 1 (half adders do this). AND every next bit with NOT Reset.",
+                hints = new[]
+                {
+                    "Keep the count in flip-flops, and feed them the count plus one.",
+                    "Bit 0 flips on every tick. Bit 1 flips when bit 0 is 1. Bit 2 flips when bits 0 and 1 are both 1. A chain of half adders does exactly this.",
+                    "Four flip-flops hold the count. Their next value is the count plus one: bit 0 flips every tick, and each higher bit flips when all the bits below it are 1 (half adders do this). AND every next bit with NOT Reset.",
+                },
                 tip = "Press Space to toggle the Clk input.",
                 inputs = new[] { "Clk", "Reset" }, outputs = new[] { "Q0", "Q1", "Q2", "Q3" },
                 sequence = CounterSequence(),
@@ -443,7 +509,12 @@ namespace SiliconForge.Core
             {
                 id = "REG4", era = 4, number = 16, title = "Nibble Register", tagline = "Four bits at once.",
                 brief = "A register that holds a whole 4-bit number. On a rising Clk edge, if Load is 1, Q takes D. Otherwise Q keeps its value.\n\nGood news from the factory: Era V moves to a finer process, so every gate now draws half the power, 0.25 W.",
-                hint = "Four of your 1-bit registers side by side, all sharing Load and Clk.",
+                hints = new[]
+                {
+                    "You've already built a register that holds one bit.",
+                    "Use one Register per bit. Which inputs can all four share?",
+                    "Four of your 1-bit registers side by side, all sharing Load and Clk.",
+                },
                 tip = "Press Space to toggle the Clk input. The test table shows D and Q as numbers from 0 to 15.",
                 inputs = Concat(Pins("D", 4), new[] { "Load", "Clk" }), outputs = Pins("Q", 4),
                 inputGroups = new[] { G("D", 0, 4), G("Load", 4), G("Clk", 5) },
@@ -456,7 +527,12 @@ namespace SiliconForge.Core
             {
                 id = "MUX4", era = 4, number = 17, title = "Bus Selector", tagline = "Pick one of two numbers.",
                 brief = "Out is the number A when Sel is 0, and the number B when Sel is 1. Every bit switches together.\n\nYour processor will use this to choose where a new value for A comes from.",
-                hint = "Four Selectors. They can all share one inverted Sel, which saves gates.",
+                hints = new[]
+                {
+                    "Each output bit is a Selector choosing between one bit of A and the same bit of B.",
+                    "Four Selectors cost 16 gates, which is over par. Each one makes its own NOT Sel inside. Build the bits from NANDs and make NOT Sel once.",
+                    "Four Selectors. They can all share one inverted Sel, which saves gates.",
+                },
                 inputs = Concat(Pins("A", 4), Pins("B", 4), new[] { "Sel" }), outputs = Pins("Out", 4),
                 inputGroups = new[] { G("A", 0, 4), G("B", 4, 4), G("Sel", 8) },
                 outputGroups = new[] { G("Out", 0, 4) },
@@ -469,7 +545,12 @@ namespace SiliconForge.Core
             {
                 id = "ZERO", era = 4, number = 18, title = "Zero Detector", tagline = "Is it nothing?",
                 brief = "Z is 1 only when all four bits of A are 0.\n\nWith this your processor can make decisions: jump somewhere else when a number runs out.",
-                hint = "Z is NOT (A0 OR A1 OR A2 OR A3). Build it as two ORs feeding a NOR.",
+                hints = new[]
+                {
+                    "Z is 1 only when every bit is 0. Put the other way round: Z is 0 if any bit is 1.",
+                    "Find out whether any bit is 1 using ORs, then invert the answer.",
+                    "Z is NOT (A0 OR A1 OR A2 OR A3). Build it as two ORs feeding a NOR.",
+                },
                 inputs = Pins("A", 4), outputs = new[] { "Z" },
                 truth = x => x == 0 ? 1 : 0,
                 parts = new[] { PartTypes.Nand, "NOT", "AND", "OR" },
@@ -479,7 +560,12 @@ namespace SiliconForge.Core
             {
                 id = "PC", era = 4, number = 19, title = "Program Counter", tagline = "Where am I?",
                 brief = "A counter that can also jump. On each rising Clk edge:\n- if Reset is 1, Q becomes 0\n- otherwise if Jump is 1, Q becomes J\n- otherwise Q goes up by one\n\nIt points at the instruction your processor runs next.",
-                hint = "Start from your counter's design: four flip-flops and a +1 circuit. Put a Bus Selector between the +1 result and J, controlled by Jump, then AND every bit with NOT Reset.",
+                hints = new[]
+                {
+                    "This is your counter with one more choice about what the next value is.",
+                    "The next value is either Q + 1 or J, depending on Jump. Reset overrides both.",
+                    "Start from your counter's design: four flip-flops and a +1 circuit. Put a Bus Selector between the +1 result and J, controlled by Jump, then AND every bit with NOT Reset.",
+                },
                 tip = "Press Space to toggle the Clk input.",
                 inputs = Concat(new[] { "Clk", "Reset", "Jump" }, Pins("J", 4)), outputs = Pins("Q", 4),
                 inputGroups = new[] { G("Clk", 0), G("Reset", 1), G("Jump", 2), G("J", 3, 4) },
@@ -492,7 +578,12 @@ namespace SiliconForge.Core
             {
                 id = "CPU", era = 4, number = 20, title = "Processor", tagline = "It follows orders.",
                 brief = "Put it all together. Each instruction is a 2-bit opcode (Op) and a number N:\n- LDI N: A = N\n- ADD N: A = A + N\n- JMP N: jump to instruction N\n- JZ N: jump to N if A is 0\n\nOn every rising Clk edge, run the instruction on the inputs. PC tells the machine which instruction to send next. Reset only needs to set PC to 0.",
-                hint = "A Nibble Register holds A and loads on LDI and ADD (Op1 = 0). A Bus Selector picks N or A + N using Op0. Your Program Counter jumps when Op1 is 1 and either Op0 is 0 (JMP) or A is zero (JZ).",
+                hints = new[]
+                {
+                    "Split it into parts: a register that holds A, your Program Counter, and some logic that reads Op.",
+                    "LDI and ADD change A, while JMP and JZ change PC. Op1 tells the two pairs apart, and Op0 picks within each pair.",
+                    "A Nibble Register holds A and loads on LDI and ADD (Op1 = 0). A Bus Selector picks N or A + N using Op0. Your Program Counter jumps when Op1 is 1 and either Op0 is 0 (JMP) or A is zero (JZ).",
+                },
                 tip = "The test plays a short program into your processor, one clock edge per row. Op is shown as the instruction name.",
                 inputs = Concat(Pins("N", 4), new[] { "Op0", "Op1", "Clk", "Reset" }),
                 outputs = Concat(Pins("PC", 4), Pins("A", 4)),
@@ -512,7 +603,12 @@ namespace SiliconForge.Core
             {
                 id = "DEC2", era = 5, number = 22, title = "Decoder", tagline = "One line of four.",
                 brief = "Turn a 2-bit address into one of four lines: exactly one of Y0 to Y3 is 1, the one whose number is the address.\n\nAnother process shrink: from Era VI every gate draws 0.125 W.",
-                hint = "Y0 = NOT A0 AND NOT A1, Y1 = A0 AND NOT A1, and so on. Invert each address bit once and share it.",
+                hints = new[]
+                {
+                    "Each output is 1 for exactly one address. For each Y, write down which address bits must be 0 and which must be 1.",
+                    "Each Y is an AND of two signals: A0 or NOT A0, and A1 or NOT A1.",
+                    "Y0 = NOT A0 AND NOT A1, Y1 = A0 AND NOT A1, and so on. Invert each address bit once and share it.",
+                },
                 inputs = new[] { "A0", "A1" }, outputs = Pins("Y", 4),
                 truth = x => 1 << x,
                 parts = new[] { PartTypes.Nand, "NOT", "AND", "OR" },
@@ -522,7 +618,12 @@ namespace SiliconForge.Core
             {
                 id = "SEL4", era = 5, number = 23, title = "Word Selector", tagline = "Pick one of four numbers.",
                 brief = "Four 4-bit numbers come in: A, B, C and D. The 2-bit S picks which one comes out: 0 is A, 1 is B, 2 is C, 3 is D.\n\nYour memory will use this to read the word at an address.",
-                hint = "Two Bus Selectors pick within each pair using S0, then a third picks between the pairs using S1.",
+                hints = new[]
+                {
+                    "Pick in two rounds, like a tournament.",
+                    "S0 chooses within each pair (A or B, C or D), then S1 chooses which pair wins.",
+                    "Two Bus Selectors pick within each pair using S0, then a third picks between the pairs using S1.",
+                },
                 inputs = Concat(Pins("A", 4), Pins("B", 4), Pins("C", 4), Pins("D", 4), new[] { "S0", "S1" }), outputs = Pins("Out", 4),
                 inputGroups = new[] { G("A", 0, 4), G("B", 4, 4), G("C", 8, 4), G("D", 12, 4), G("S", 16, 2) },
                 outputGroups = new[] { G("Out", 0, 4) },
@@ -535,7 +636,12 @@ namespace SiliconForge.Core
             {
                 id = "RAM4", era = 5, number = 24, title = "Memory", tagline = "Four words you can rewrite.",
                 brief = "Four 4-bit words of memory. Q always shows the word at address A. On a rising Clk edge, if Write is 1, the word at A becomes D. The other words don't change.\n\nThis is a tiny RAM. Your screen will display it.",
-                hint = "Four Nibble Registers hold the words. A Decoder on A picks which one loads: Load is Write AND that register's decoder line. A Word Selector on A picks which one Q shows.",
+                hints = new[]
+                {
+                    "Four words need four registers. The address decides which one gets written and which one gets read.",
+                    "Writing: only the register at address A loads, and only when Write is 1. Reading: a selector picks the register at address A.",
+                    "Four Nibble Registers hold the words. A Decoder on A picks which one loads: Load is Write AND that register's decoder line. A Word Selector on A picks which one Q shows.",
+                },
                 tip = "Press Space to toggle the Clk input. Reading is instant: change A and Q follows without a clock.",
                 inputs = Concat(Pins("D", 4), new[] { "A0", "A1", "Write", "Clk" }), outputs = Pins("Q", 4),
                 inputGroups = new[] { G("D", 0, 4), G("A", 4, 2), G("Write", 6), G("Clk", 7) },
@@ -548,7 +654,12 @@ namespace SiliconForge.Core
             {
                 id = "CPU2", era = 5, number = 25, title = "Processor II", tagline = "Now it can write.",
                 brief = "Your processor gets a third opcode bit and a new instruction:\n- STA N: write A to memory row N (0 to 3)\n\nDuring STA, raise the new W output; the machine sends A and N to the memory. STA must not change A and must not jump. Op2 is 0 for the four old instructions, which work as before.",
-                hint = "Start from your Processor's design. A should load only when Op1 and Op2 are both 0, and a jump needs Op2 to be 0. W is just Op2. Or wrap your old Processor chip: during STA, feed it an ADD with N forced to 0.",
+                hints = new[]
+                {
+                    "STA doesn't change A and doesn't jump. All it needs to do is raise W.",
+                    "Work out when A loads and when PC jumps, so that both stay unchanged while Op2 is 1.",
+                    "Start from your Processor's design. A should load only when Op1 and Op2 are both 0, and a jump needs Op2 to be 0. W is just Op2. Or wrap your old Processor chip: during STA, feed it an ADD with N forced to 0.",
+                },
                 tip = "The test plays a program with STA into your processor. W should be 1 exactly on the rows where Op is STA.",
                 inputs = Concat(Pins("N", 4), Pins("Op", 3), new[] { "Clk", "Reset" }),
                 outputs = Concat(Pins("PC", 4), Pins("A", 4), new[] { "W" }),
@@ -568,7 +679,12 @@ namespace SiliconForge.Core
             {
                 id = "PRESS", era = 6, number = 27, title = "Press Detector", tagline = "One press, one signal.",
                 brief = "A button stays down for many clock ticks, but a program wants to hear about each press once.\n\nP is 0 until a rising Clk edge first sees Btn at 1. Then P is 1 for exactly two clock cycles and goes back to 0, even if the button is still held. Two cycles means a program checking the button in a two-instruction loop can never miss it.",
-                hint = "Three flip-flops in a row remember the button at the last three edges. P is (the newest OR the middle one) AND NOT the oldest one, which also keeps a quick tap at two cycles.",
+                hints = new[]
+                {
+                    "To notice that something just changed, compare the button now with the button one tick ago.",
+                    "Flip-flops in a row remember the button at the last few clock edges. P should be 1 for the two cycles after the first edge that sees the button down.",
+                    "Three flip-flops in a row remember the button at the last three edges. P is (the newest OR the middle one) AND NOT the oldest one, which also keeps a quick tap at two cycles.",
+                },
                 tip = "Press Space to toggle the Clk input.",
                 inputs = new[] { "Btn", "Clk" }, outputs = new[] { "P" },
                 sequence = PressSequence(),
@@ -579,7 +695,12 @@ namespace SiliconForge.Core
             {
                 id = "CPU3", era = 6, number = 28, title = "Processor III", tagline = "Read, add, react.",
                 brief = "Three more instructions fill the last opcodes:\n- LDA N: A = memory row N\n- ADA N: A = A + memory row N\n- JB N: jump to N if the button input Btn is 1\n\nThe machine puts memory row N on the new M inputs, so LDA and ADA work like LDI and ADD with M in place of N. Everything from Processor II still works the same way.",
-                hint = "Pick the operand first: a Bus Selector chooses N or M using Op2. LDI and LDA load that operand, ADD and ADA load A plus it. A loads for LDI, ADD, LDA and ADA. Jump on JMP, on JZ when A is 0, and on JB when Btn is 1.",
+                hints = new[]
+                {
+                    "LDA and ADA work just like LDI and ADD, with M in place of N.",
+                    "Choose the operand first, N or M, then reuse your old load-and-add logic. JB is one more reason to jump.",
+                    "Pick the operand first: a Bus Selector chooses N or M using Op2. LDI and LDA load that operand, ADD and ADA load A plus it. A loads for LDI, ADD, LDA and ADA. Jump on JMP, on JZ when A is 0, and on JB when Btn is 1.",
+                },
                 tip = "The test plays a program into your processor and acts as its memory. M is shown as a number.",
                 inputs = Concat(Pins("N", 4), Pins("Op", 3), Pins("M", 4), new[] { "Btn", "Clk", "Reset" }),
                 outputs = Concat(Pins("PC", 4), Pins("A", 4), new[] { "W" }),

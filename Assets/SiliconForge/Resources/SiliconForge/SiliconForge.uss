@@ -444,7 +444,7 @@
 .brief__scroll { flex-grow: 1; }
 .brief__inner { padding: 24px 24px 28px 24px; }
 .screen .brief__title { font-size: 28px; -unity-font-style: bold; margin: 8px 0 12px 0; }
-.brief__hint { margin-top: 12px; padding: 12px 14px; border-radius: 8px; background-color: var(--accent-soft); }
+.brief__hint { margin-top: 12px; padding: 10px 14px 12px 12px; border-radius: 8px; background-color: #1D1A15; border-left-width: 3px; border-color: var(--accent); }
 .screen .brief__hint-text { white-space: normal; font-size: 14px; color: #F3D7A8; }
 .brief__hint-toggle { align-self: flex-start; margin-top: 12px; }
 .divider { height: 1px; background-color: var(--line); margin: 22px 0; }
@@ -757,3 +757,44 @@
 .hold-button--down { background-color: #C2262E; border-color: #E0454C; scale: 0.96 0.96; }
 .hold-button--down:hover { background-color: #C2262E; }
 .screen .status-line__text { font-size: 14px; white-space: normal; color: var(--text-2); }
+
+/* ---------- Hints ---------- */
+.hints { margin-top: 4px; }
+.hints__row { flex-direction: row; align-items: center; margin-top: 12px; }
+.hints__button { align-self: flex-start; }
+.screen .hints__note { font-size: 13px; color: var(--text-3); margin-left: 12px; }
+.screen .hints__label { font-size: 11px; letter-spacing: 1.5px; -unity-font-style: bold; color: var(--accent); margin-bottom: 4px; }
+.hints__button--nudge { border-color: var(--accent); background-color: var(--accent-soft); }
+.screen .hints__button--nudge .btn__label { color: var(--accent); }
+
+.banner--above-table { margin-top: 0; margin-bottom: 12px; }
+
+/* The first case that failed: the one the explanation talks about. */
+.tt-row--first-fail { background-color: #2A161A; border-left-color: var(--bad); }
+.tt-row--first-fail:hover { background-color: #321A1F; }
+
+/* ---------- First-contract tutorial ---------- */
+.coach {
+    position: absolute;
+    left: 20px; top: 20px;
+    width: 420px;
+    padding: 16px 18px 12px 18px;
+    border-radius: 12px;
+    background-color: var(--panel-2);
+    border-width: 1px;
+    border-color: rgba(255, 181, 71, 0.45);
+}
+.coach__head { flex-direction: row; align-items: center; }
+.screen .coach__eyebrow { color: var(--accent); }
+.screen .coach__count { font-size: 13px; color: var(--text-3); }
+.coach__bar { flex-direction: row; margin: 10px 0 12px 0; }
+.coach__segment { flex-grow: 1; height: 4px; border-radius: 2px; margin-right: 4px; background-color: var(--line-2); }
+.coach__segment--done { background-color: var(--accent); }
+.coach__segment--now { background-color: #8A6530; }
+.screen .coach__text { white-space: normal; font-size: 15px; color: var(--text); }
+.coach__foot { flex-direction: row; margin-top: 8px; }
+
+/* Whatever the current tutorial step is about pulses gently. */
+.coach-target { border-color: var(--accent); transition-property: all; transition-duration: 0.35s; }
+.coach-target--on { border-color: #FFD28A; background-color: #2A2213; }
+.btn--primary.coach-target--on { background-color: var(--accent-hover); scale: 1.06 1.06; }

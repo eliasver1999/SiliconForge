@@ -10,6 +10,8 @@ namespace SiliconForge.Core
         public bool solved;
         public int bestGates;
         public int stars;
+        /// <summary>How many of the contract's hints the player has revealed. Hints never cost stars.</summary>
+        public int hintsShown;
     }
 
     [Serializable]
