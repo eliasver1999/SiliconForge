@@ -41,3 +41,9 @@ Thumbs.db
 /Assets/Resources/PerformanceTestRun*
 .mcp.json
 /Assets/Resources.meta
+
+# dotnet test output
+/Tests/**/bin/
+/Tests/**/obj/
+/Tests/**/TestResults/
+!/Tests/Core/SiliconForge.Core.Tests.csproj
