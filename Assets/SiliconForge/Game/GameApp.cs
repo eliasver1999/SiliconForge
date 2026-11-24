@@ -56,6 +56,12 @@ namespace SiliconForge.Game
             ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(folder, "smoke_campaign.png"));
             yield return new WaitForSeconds(1f);
 
+            Root.Query(className: "modal-overlay").ForEach(e => e.RemoveFromHierarchy());
+            SettingsUi.Show(screen.Root, this);
+            yield return new WaitForSeconds(1f);
+            ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(folder, "smoke_settings.png"));
+            yield return new WaitForSeconds(1f);
+
             screen?.Dispose();
             screen = null;
             Root.Clear();
@@ -113,6 +119,7 @@ namespace SiliconForge.Game
             document.panelSettings = settings;
             uiObject.SetActive(true);
 
+            GameSettings.Init(settings);
             Root = document.rootVisualElement;
             Root.styleSheets.Add(Resources.Load<StyleSheet>("SiliconForge/SiliconForge"));
             Root.AddToClassList("sf-root");

@@ -24,7 +24,8 @@ namespace SiliconForge.Game.UI
             header.Add(brand);
             header.Add(Ui.Div("spacer"));
 
-            header.Add(Ui.Button("Station log", () => StoryUi.ShowJournal(Root, app.Save), "btn--small", "header-log"));
+            header.Add(Ui.Button("Station log", () => StoryUi.ShowJournal(Root, app.Save), "btn--small", "header-button"));
+            header.Add(Ui.Button("Settings", () => SettingsUi.Show(Root, app), "btn--small", "header-button", "header-log"));
             var stats = Ui.Div("header-stats");
             stats.Add(HeaderStat($"{app.Save.SolvedCount} / {Campaign.Levels.Count}", "CONTRACTS"));
             stats.Add(HeaderStat(app.Save.chips.Count.ToString(), "CHIPS DESIGNED"));
@@ -58,14 +59,7 @@ namespace SiliconForge.Game.UI
             var footer = Ui.Div("campaign__footer");
             footer.Add(Ui.Text("Progress saves automatically.", "footer-note"));
             footer.Add(Ui.Div("spacer"));
-            UiButton sound = null;
-            sound = Ui.Button(Sfx.Enabled ? "Sound on" : "Sound off", () =>
-            {
-                Sfx.Enabled = !Sfx.Enabled;
-                sound.Text = Sfx.Enabled ? "Sound on" : "Sound off";
-            }, "btn--ghost", "btn--small");
-            footer.Add(sound);
-            footer.Add(Ui.Button("Reset progress", ConfirmReset, "btn--ghost", "btn--small"));
+            footer.Add(Ui.Button("Quit", () => SettingsUi.ConfirmQuit(Root), "btn--ghost", "btn--small"));
             Root.Add(footer);
         }
 
@@ -129,18 +123,6 @@ namespace SiliconForge.Game.UI
             foreach (var child in card.Children()) child.pickingMode = PickingMode.Ignore;
             if (unlocked) card.AddManipulator(new Clickable(() => app.OpenLevel(level)));
             return card;
-        }
-
-        void ConfirmReset()
-        {
-            VisualElement overlay = null;
-            var card = Modal.Card(
-                Ui.Badge(false),
-                "Reset all progress?",
-                "This deletes every chip you designed and every contract you completed. It can't be undone.",
-                "Cancel", () => Modal.Close(overlay),
-                "Reset", () => app.ResetProgress());
-            overlay = Modal.Show(Root, card);
         }
     }
 }

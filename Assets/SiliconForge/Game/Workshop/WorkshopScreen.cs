@@ -841,6 +841,7 @@ namespace SiliconForge.Game.Workshop
             title.Add(Ui.Text(level.title, "topbar__name"));
             bar.Add(title);
             bar.Add(Ui.Div("spacer"));
+            bar.Add(Ui.Button("Settings", () => SettingsUi.Show(Root, app), "btn--ghost", "topbar__settings"));
             void Stat(string name, string value)
             {
                 bar.Add(Ui.Stat(name, out var label));

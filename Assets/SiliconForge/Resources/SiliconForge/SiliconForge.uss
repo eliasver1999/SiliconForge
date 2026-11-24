@@ -203,6 +203,7 @@
 .screen .topbar__num { font-size: 14px; color: var(--text-3); -unity-font-style: bold; margin-right: 10px; }
 .screen .topbar__name { font-size: 18px; -unity-font-style: bold; }
 .topbar .btn { margin-left: 8px; }
+.topbar .topbar__settings { margin-right: 16px; }
 
 .stat {
     flex-direction: row;
@@ -707,6 +708,32 @@
 .target__px--on { background-color: var(--accent); }
 .screen .target__value { font-size: 12px; color: var(--text-3); margin-left: 10px; }
 
+/* ---------- Settings ---------- */
+.modal-card.settings-card { width: 640px; align-items: stretch; padding: 28px 32px 24px 32px; }
+.screen .settings__title { font-size: 26px; -unity-font-style: bold; margin: 6px 0 6px 0; }
+.screen .settings__section { margin-top: 20px; margin-bottom: 4px; }
+.settings__row { flex-direction: row; align-items: center; height: 52px; border-bottom-width: 1px; border-color: var(--line); }
+.screen .settings__label { font-size: 15px; color: var(--text); }
+.settings__switch { width: 40px; height: 22px; border-radius: 11px; }
+.settings__switch .switch__knob { width: 18px; height: 18px; border-radius: 9px; }
+.settings__switch.switch--on .switch__knob { left: 20px; }
+.cycle { flex-direction: row; align-items: center; }
+.screen .cycle__value { min-width: 150px; -unity-text-align: middle-center; font-size: 15px; -unity-font-style: bold; }
+.cycle__arrow { width: 32px; padding: 0; }
+.cycle__chevron { width: 8px; height: 8px; border-left-width: 2px; border-bottom-width: 2px; border-color: var(--text-2); }
+.cycle__chevron--left { rotate: 45deg; translate: 2px 0; }
+.cycle__chevron--right { rotate: -135deg; translate: -2px 0; }
+.cycle__arrow:hover .cycle__chevron { border-color: var(--accent); }
+.slider-box { flex-direction: row; align-items: center; }
+.slider { width: 220px; height: 6px; border-radius: 3px; background-color: var(--panel-3); margin: 8px 0; }
+.slider__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background-color: var(--accent); }
+.slider__knob { position: absolute; top: -6px; width: 18px; height: 18px; border-radius: 9px; background-color: #F3F5F8; translate: -9px 0; }
+.screen .slider__value { width: 52px; -unity-text-align: middle-right; font-size: 14px; color: var(--text-2); }
+.btn--danger { border-color: #6A2A30; background-color: var(--bad-soft); }
+.btn--danger:hover { border-color: var(--bad); background-color: #3A1A1F; }
+.screen .btn--danger .btn__label { color: #FF9AA4; }
+.settings-card .modal-actions { margin-top: 24px; }
+
 /* ---------- Station log ---------- */
 .modal-card.log-card { width: 640px; align-items: stretch; padding: 28px 32px 24px 32px; }
 .log-card__head { flex-direction: row; align-items: center; margin-bottom: 18px; }
@@ -715,6 +742,7 @@
 .screen .log-card__heading { font-size: 22px; -unity-font-style: bold; margin-bottom: 14px; }
 .screen .log-card__text { font-size: 17px; white-space: normal; color: var(--text); min-height: 180px; }
 .log-card .modal-actions { margin-top: 24px; }
+.header-button { margin-left: 8px; }
 .header-log { margin-right: 28px; }
 
 .modal-card.journal-card { width: 760px; height: 720px; align-items: stretch; padding: 28px 32px 24px 32px; }

@@ -334,6 +334,7 @@ namespace SiliconForge.Game.UI
             title.Add(Ui.Text(level.title, "topbar__name"));
             bar.Add(title);
             bar.Add(Ui.Div("spacer"));
+            bar.Add(Ui.Button("Settings", () => SettingsUi.Show(Root, app), "btn--ghost", "topbar__settings"));
 
             gatesStat = Ui.Stat("GATES", out gatesValue);
             bar.Add(gatesStat);
